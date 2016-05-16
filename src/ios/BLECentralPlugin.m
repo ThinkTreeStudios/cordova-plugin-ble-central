@@ -23,6 +23,7 @@
     NSDictionary *bluetoothStates;
 }
 - (CBPeripheral *)findPeripheralByUUID:(NSString *)uuid;
+- (CBPeripheral *)findPeripheralByPartialUUID:(NSString *)uuid;
 - (void)stopScanTimer:(NSTimer *)timer;
 @end
 
@@ -30,6 +31,8 @@
 
 @synthesize manager;
 @synthesize peripherals;
+@synthesize partialMatch;
+@synthesize serviceUUIDString;
 
 - (void)pluginInitialize {
 
@@ -56,6 +59,9 @@
                        @"on", @(CBCentralManagerStatePoweredOn),
                        nil];
     readRSSICallbacks = [NSMutableDictionary new];
+    partialMatch = false; 
+    serviceUUIDString = [[NSString alloc] init]; // Empty string
+
 }
 
 #pragma mark - Cordova Plugin Methods
@@ -82,6 +88,29 @@
     }
 
 }
+- (void)connectByService:(CDVInvokedUrlCommand *)command {
+
+    NSLog(@"connect by service");
+    NSString *uuid = [command.arguments objectAtIndex:0];
+
+    CBPeripheral *peripheral = [self findPeripheralByPartialUUID:uuid];
+
+    if (peripheral) {
+        NSLog(@"Connecting to peripheral with partial UUID : %@", uuid);
+
+        [connectCallbacks setObject:[command.callbackId copy] forKey:[peripheral uuidAsString]];
+        [manager connectPeripheral:peripheral options:nil];
+
+    } else {
+        NSString *error = [NSString stringWithFormat:@"Could not find peripheral %@.", uuid];
+        NSLog(@"%@", error);
+        CDVPluginResult *pluginResult = nil;
+        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+    }
+   
+}
+
 
 // disconnect: function (device_id, success, failure) {
 - (void)disconnect:(CDVInvokedUrlCommand*)command {
@@ -237,6 +266,7 @@
     NSArray *serviceUUIDStrings = [command.arguments objectAtIndex:0];
     NSNumber *timeoutSeconds = [command.arguments objectAtIndex:1];
     NSMutableArray *serviceUUIDs = [NSMutableArray new];
+    partialMatch = false;
 
     for (int i = 0; i < [serviceUUIDStrings count]; i++) {
         CBUUID *serviceUUID =[CBUUID UUIDWithString:[serviceUUIDStrings objectAtIndex: i]];
@@ -244,6 +274,45 @@
     }
 
     [manager scanForPeripheralsWithServices:serviceUUIDs options:nil];
+
+    [NSTimer scheduledTimerWithTimeInterval:[timeoutSeconds floatValue]
+                                     target:self
+                                   selector:@selector(stopScanTimer:)
+                                   userInfo:[command.callbackId copy]
+                                    repeats:NO];
+
+}
+
+- (void)partialScan:(CDVInvokedUrlCommand*)command {
+
+    NSLog(@"scan");
+    discoverPeripherialCallbackId = [command.callbackId copy];
+
+    NSArray *serviceUUIDStrings = [command.arguments objectAtIndex:0];
+    NSMutableArray *serviceUUIDs = [NSMutableArray new];
+    NSNumber *timeoutSeconds = [command.arguments objectAtIndex:2];
+
+    partialMatch = [command.arguments objectAtIndex:1];  // NVF Added this parameter to support partial searches
+
+    // Build the string to look for in the advertising data of the scan record
+
+    if (partialMatch) {
+        serviceUUIDString = [[serviceUUIDStrings objectAtIndex: 0] stringByReplacingOccurrencesOfString:@"-" withString:@""];
+    }
+    else  // Or build the serviceUUID list
+    {
+
+        for (int i = 0; i < [serviceUUIDStrings count]; i++) {
+            CBUUID *serviceUUID =[CBUUID UUIDWithString:[serviceUUIDStrings objectAtIndex: i]];
+            [serviceUUIDs addObject:serviceUUID];
+        }
+    }
+
+    //[manager scanForPeripheralsWithServices:serviceUUIDs options:nil];
+    if (!partialMatch && serviceUUIDStrings.count>0)
+        [manager scanForPeripheralsWithServices:serviceUUIDs options:nil];  // Find just what we're looking for
+    else
+        [manager scanForPeripheralsWithServices:nil options:nil];   // Find everything, possibly filtered by the serviceUUIDString
 
     [NSTimer scheduledTimerWithTimeInterval:[timeoutSeconds floatValue]
                                      target:self
@@ -387,6 +456,7 @@
 
 #pragma mark - CBCentralManagerDelegate
 
+/*
 - (void)centralManager:(CBCentralManager *)central didDiscoverPeripheral:(CBPeripheral *)peripheral advertisementData:(NSDictionary *)advertisementData RSSI:(NSNumber *)RSSI {
 
     [peripherals addObject:peripheral];
@@ -401,6 +471,46 @@
     }
 
 }
+*/
+- (void)centralManager:(CBCentralManager *)central didDiscoverPeripheral:(CBPeripheral *)peripheral advertisementData:(NSDictionary *)advertisementData RSSI:(NSNumber *)RSSI {
+
+    [peripheral setAdvertisementData:advertisementData RSSI:RSSI];
+    [peripherals addObject:peripheral];
+
+
+    // NVF Added this for partial matching on serviceUUIDs
+
+    NSMutableArray *serviceUUIDStrings = [advertisementData objectForKey:CBAdvertisementDataServiceUUIDsKey];
+
+    if (partialMatch && serviceUUIDStrings!=nil && [ [[(CBUUID *)[serviceUUIDStrings objectAtIndex:0] UUIDString] stringByReplacingOccurrencesOfString:@"-" withString:@""] rangeOfString:serviceUUIDString options:NSCaseInsensitiveSearch].location != NSNotFound)  // Is the serviceUUID we're looking for contained in the serviceUUIDs advertised?
+    {
+        if (discoverPeripherialCallbackId) {
+            CDVPluginResult *pluginResult = nil;
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:[peripheral asDictionary]];
+            NSLog(@"Scan for partial UUID %@ Discovered %@",serviceUUIDString, [peripheral asDictionary]);
+            [pluginResult setKeepCallbackAsBool:TRUE];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripherialCallbackId];
+        }
+    }
+    else if (!partialMatch && serviceUUIDStrings!=nil)  // We've got a result from a specific serviceUUID search
+    {
+        if (discoverPeripherialCallbackId) {
+            CDVPluginResult *pluginResult = nil;
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:[peripheral asDictionary]];
+            NSLog(@"Scan for service UUID Discovered %@", [peripheral asDictionary]);
+            [pluginResult setKeepCallbackAsBool:TRUE];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripherialCallbackId];
+        }
+
+    }
+    else
+    {
+         // If we're not looking for a match, just build the list of peripherals
+        NSLog(@"Scan with no service UUID and no partial match Discovered %@", [peripheral asDictionary]);
+    }
+
+}
+
 
 - (void)centralManagerDidUpdateState:(CBCentralManager *)central
 {
@@ -624,13 +734,53 @@
 
         NSString* other = p.identifier.UUIDString;
 
+	NSLog(@"Find Peripheral: %@",[p asDictionary]);
+
         if ([uuid isEqualToString:other]) {
             peripheral = p;
+	    NSLog(@"Found Peripheral: %@",[p asDictionary]);
             break;
         }
     }
     return peripheral;
 }
+- (CBPeripheral*)findPeripheralByPartialUUID:(NSString*)uuid  {
+
+    CBPeripheral *peripheral = nil;
+
+    for (CBPeripheral *p in peripherals) {
+
+        NSString* other = p.identifier.UUIDString;
+        Boolean     a = [uuid isEqualToString:other];
+        NSInteger   b = [serviceUUIDString  rangeOfString: uuid options:NSCaseInsensitiveSearch].location ;
+
+        NSLog(@"a=%hhu b=%ld",a,(long)b);
+        NSLog(@"Find Peripheral by partial uuid: %@",[p asDictionary]);
+
+        // NVF Modified this to work when the service being looked for is only a partial match - try to match the UUID supplied with the first one that was advertised.
+
+        NSDictionary * peripheralDictionary = [p asDictionary];
+        NSDictionary * advertisementData =[peripheralDictionary objectForKey:@"advertising"];
+
+        // NVF Added this for partial matching on serviceUUIDs being advertised
+        NSMutableArray *serviceUUIDStrings = [advertisementData objectForKey:CBAdvertisementDataServiceUUIDsKey]; // Get the Service UUIDs being advertised and then search for a match
+
+        for(int i = 0; i < serviceUUIDStrings.count; i++)
+        {
+
+
+            NSString *firstUUIDString = [[serviceUUIDStrings objectAtIndex:i] stringByReplacingOccurrencesOfString:@"-" withString:@""];
+
+            if ([firstUUIDString rangeOfString:uuid options:NSCaseInsensitiveSearch].location != NSNotFound) {
+                peripheral = p;
+                NSLog(@"Found Peripheral: %@",[p asDictionary]);
+                return peripheral;
+            }
+        }
+    }
+    return peripheral;
+}
+
 
 // RedBearLab
 -(CBService *) findServiceFromUUID:(CBUUID *)UUID p:(CBPeripheral *)p

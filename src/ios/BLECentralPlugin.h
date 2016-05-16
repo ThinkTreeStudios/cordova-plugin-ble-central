@@ -38,8 +38,11 @@
 
 @property (strong, nonatomic) NSMutableSet *peripherals;
 @property (strong, nonatomic) CBCentralManager *manager;
+@property (assign, nonatomic) BOOL    partialMatch;
+@property (strong, nonatomic) NSString* serviceUUIDString;
 
 - (void)scan:(CDVInvokedUrlCommand *)command;
+- (void)partialScan:(CDVInvokedUrlCommand *)command;
 - (void)startScan:(CDVInvokedUrlCommand *)command;
 - (void)startScanWithOptions:(CDVInvokedUrlCommand *)command;
 - (void)stopScan:(CDVInvokedUrlCommand *)command;

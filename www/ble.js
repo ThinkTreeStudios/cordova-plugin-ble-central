@@ -56,6 +56,14 @@ module.exports = {
         };
         cordova.exec(successWrapper, failure, 'BLE', 'scan', [services, seconds]);
     },
+    partialScan: function (services, partial, seconds,  success, failure) {
+        var successWrapper = function(peripheral) {
+            convertToNativeJS(peripheral);
+            success(peripheral);
+        };
+        cordova.exec(successWrapper, failure, 'BLE', 'partialScan', [services, partial, seconds]);
+    },
+
 
     startScan: function (services, success, failure) {
         var successWrapper = function(peripheral) {
@@ -89,8 +97,7 @@ module.exports = {
             success(peripheral);
         };
         cordova.exec(successWrapper, failure, 'BLE', 'connect', [device_id]);
-    },
-
+    }, 
     disconnect: function (device_id, success, failure) {
         cordova.exec(success, failure, 'BLE', 'disconnect', [device_id]);
     },
