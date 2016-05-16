@@ -261,7 +261,7 @@
 - (void)scan:(CDVInvokedUrlCommand*)command {
 
     NSLog(@"scan");
-    discoverPeripherialCallbackId = [command.callbackId copy];
+    discoverPeripheralCallbackId = [command.callbackId copy];
 
     NSArray *serviceUUIDStrings = [command.arguments objectAtIndex:0];
     NSNumber *timeoutSeconds = [command.arguments objectAtIndex:1];
@@ -286,7 +286,7 @@
 - (void)partialScan:(CDVInvokedUrlCommand*)command {
 
     NSLog(@"scan");
-    discoverPeripherialCallbackId = [command.callbackId copy];
+    discoverPeripheralCallbackId = [command.callbackId copy];
 
     NSArray *serviceUUIDStrings = [command.arguments objectAtIndex:0];
     NSMutableArray *serviceUUIDs = [NSMutableArray new];
@@ -325,7 +325,7 @@
 - (void)startScan:(CDVInvokedUrlCommand*)command {
 
     NSLog(@"startScan");
-    discoverPeripherialCallbackId = [command.callbackId copy];
+    discoverPeripheralCallbackId = [command.callbackId copy];
     NSArray *serviceUUIDStrings = [command.arguments objectAtIndex:0];
     NSMutableArray *serviceUUIDs = [NSMutableArray new];
 
@@ -340,7 +340,7 @@
 
 - (void)startScanWithOptions:(CDVInvokedUrlCommand*)command {
     NSLog(@"startScanWithOptions");
-    discoverPeripherialCallbackId = [command.callbackId copy];
+    discoverPeripheralCallbackId = [command.callbackId copy];
     NSArray *serviceUUIDStrings = [command.arguments objectAtIndex:0];
     NSMutableArray *serviceUUIDs = [NSMutableArray new];
     NSDictionary *options = command.arguments[1];
@@ -366,8 +366,8 @@
 
     [manager stopScan];
 
-    if (discoverPeripherialCallbackId) {
-        discoverPeripherialCallbackId = nil;
+    if (discoverPeripheralCallbackId) {
+        discoverPeripheralCallbackId = nil;
     }
 
     CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
@@ -449,8 +449,8 @@
 
     [manager stopScan];
 
-    if (discoverPeripherialCallbackId) {
-        discoverPeripherialCallbackId = nil;
+    if (discoverPeripheralCallbackId) {
+        discoverPeripheralCallbackId = nil;
     }
 }
 
@@ -462,12 +462,12 @@
     [peripherals addObject:peripheral];
     [peripheral setAdvertisementData:advertisementData RSSI:RSSI];
 
-    if (discoverPeripherialCallbackId) {
+    if (discoverPeripheralCallbackId) {
         CDVPluginResult *pluginResult = nil;
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:[peripheral asDictionary]];
         NSLog(@"Discovered %@", [peripheral asDictionary]);
         [pluginResult setKeepCallbackAsBool:TRUE];
-        [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripherialCallbackId];
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripheralCallbackId];
     }
 
 }
@@ -484,22 +484,22 @@
 
     if (partialMatch && serviceUUIDStrings!=nil && [ [[(CBUUID *)[serviceUUIDStrings objectAtIndex:0] UUIDString] stringByReplacingOccurrencesOfString:@"-" withString:@""] rangeOfString:serviceUUIDString options:NSCaseInsensitiveSearch].location != NSNotFound)  // Is the serviceUUID we're looking for contained in the serviceUUIDs advertised?
     {
-        if (discoverPeripherialCallbackId) {
+        if (discoverPeripheralCallbackId) {
             CDVPluginResult *pluginResult = nil;
             pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:[peripheral asDictionary]];
             NSLog(@"Scan for partial UUID %@ Discovered %@",serviceUUIDString, [peripheral asDictionary]);
             [pluginResult setKeepCallbackAsBool:TRUE];
-            [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripherialCallbackId];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripheralCallbackId];
         }
     }
     else if (!partialMatch && serviceUUIDStrings!=nil)  // We've got a result from a specific serviceUUID search
     {
-        if (discoverPeripherialCallbackId) {
+        if (discoverPeripheralCallbackId) {
             CDVPluginResult *pluginResult = nil;
             pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:[peripheral asDictionary]];
             NSLog(@"Scan for service UUID Discovered %@", [peripheral asDictionary]);
             [pluginResult setKeepCallbackAsBool:TRUE];
-            [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripherialCallbackId];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripheralCallbackId];
         }
 
     }
@@ -949,3 +949,4 @@
 }
 
 @end
+
