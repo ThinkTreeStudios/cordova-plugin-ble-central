@@ -84,6 +84,9 @@ public class Peripheral extends BluetoothGattCallback {
             gatt = null;
         }
     }
+    // This function requests the services, characteristics and descriptors from the device
+    // and encodes it all into a json object for later use
+    //
 
     public JSONObject asJSONObject()  {
 
@@ -172,6 +175,8 @@ public class Peripheral extends BluetoothGattCallback {
     public BluetoothDevice getDevice() {
         return device;
     }
+
+    public byte[] getAdvertisingData() { return advertisingData;}
 
     @Override
     public void onServicesDiscovered(BluetoothGatt gatt, int status) {
@@ -283,6 +288,12 @@ public class Peripheral extends BluetoothGattCallback {
             readCallback = null;
         }
         commandCompleted();
+    }
+
+    // Update rssi and scanRecord.
+    public void update(int rssi, byte[] scanRecord) {
+        this.advertisingRSSI = rssi;
+        this.advertisingData = scanRecord;
     }
 
     public void updateRssi(int rssi) {
