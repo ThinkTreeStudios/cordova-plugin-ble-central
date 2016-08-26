@@ -783,7 +783,7 @@
 
 
 // RedBearLab
--(CBService *) findServiceFromUUID:(CBUUID *)UUID p:(CBPeripheral *)p
+-(CBService *) findServiceFromUUIDOld:(CBUUID *)UUID p:(CBPeripheral *)p
 {
     for(int i = 0; i < p.services.count; i++)
     {
@@ -794,6 +794,43 @@
 
     return nil; //Service not found on this peripheral
 }
+
+-(CBService *) findServiceFromUUID:(CBUUID *)UUID p:(CBPeripheral *)p
+{
+    for(int i = 0; i < p.services.count; i++)
+    {
+        CBService *s = [p.services objectAtIndex:i];
+        NSLog(@"Comparing %@ to %@",s.UUID,UUID);
+        NSString *a = s.UUID.UUIDString;
+        NSString *b = UUID.UUIDString;
+        NSString *c = @"0000XXXX-0000-1000-8000-00805f9b34fb";
+        
+        // NVF Added to normalize the strings before comparing
+        if (s.UUID.UUIDString.length==4)
+        {
+            a = [c stringByReplacingOccurrencesOfString:@"XXXX"
+                                             withString:s.UUID.UUIDString];
+        }
+        
+        if (UUID.UUIDString.length==4)
+        {
+            b = [c stringByReplacingOccurrencesOfString:@"XXXX"
+                                             withString:UUID.UUIDString];
+        }
+        
+        NSLog(@"After normalization: Comparing %@ to %@",a,b);
+        
+        if( [a caseInsensitiveCompare:b] == NSOrderedSame )
+            return s;
+        
+        else if ([self compareCBUUID:s.UUID UUID2:UUID])
+            return s;
+    }
+    
+    return nil; //Service not found on this peripheral
+}
+
+
 
 // Find a characteristic in service with a specific property
 -(CBCharacteristic *) findCharacteristicFromUUID:(CBUUID *)UUID service:(CBService*)service prop:(CBCharacteristicProperties)prop
@@ -949,4 +986,3 @@
 }
 
 @end
-
