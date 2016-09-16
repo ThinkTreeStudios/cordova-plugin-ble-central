@@ -18,6 +18,7 @@
 
 #import "BLECentralPlugin.h"
 #import <Cordova/CDV.h>
+@import AVFoundation;
 
 @interface BLECentralPlugin() {
     NSDictionary *bluetoothStates;
@@ -66,6 +67,16 @@
 
 #pragma mark - Cordova Plugin Methods
 
+- (void)say: (CDVInvokedUrlCommand *)command {
+    
+    NSString *textToSpeak = [command.arguments objectAtIndex:0];
+    AVSpeechUtterance *utterance = [AVSpeechUtterance
+                                    speechUtteranceWithString:textToSpeak];
+    
+    AVSpeechSynthesizer *synth = [[AVSpeechSynthesizer alloc] init];
+    [synth speakUtterance:utterance];
+    
+}
 - (void)connect:(CDVInvokedUrlCommand *)command {
 
     NSLog(@"connect");

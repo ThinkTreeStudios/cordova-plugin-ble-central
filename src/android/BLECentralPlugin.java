@@ -29,6 +29,8 @@ import android.os.Handler;
 
 import android.os.Looper;
 import android.provider.Settings;
+import android.speech.tts.TextToSpeech;
+
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaArgs;
 import org.apache.cordova.CordovaPlugin;
@@ -47,6 +49,7 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
 
     // actions
     private static final String SCAN = "scan";
+    private static final String SAY = "say";
     private static final String PARTIAL_SCAN = "partialScan";
     private static final String START_SCAN = "startScan";
     private static final String STOP_SCAN = "stopScan";
@@ -103,8 +106,9 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
     String serviceUUIDString; // When looking for a partial match this is the string to use
     boolean partialMatch = false; // Used when looking for a partial match
     private int scanSeconds;
-    String [] validActions= {SCAN,PARTIAL_SCAN,START_SCAN,STOP_SCAN,START_SCAN_WITH_OPTIONS,FIND_PAIRED_DEVICE,LIST,CONNECT,DISCONNECT,READ,WRITE,WRITE_WITHOUT_RESPONSE,START_NOTIFICATION,STOP_NOTIFICATION,IS_ENABLED,IS_CONNECTED,ENABLE,SETTINGS};
+    String [] validActions= {SCAN,SAY,PARTIAL_SCAN,START_SCAN,STOP_SCAN,START_SCAN_WITH_OPTIONS,FIND_PAIRED_DEVICE,LIST,CONNECT,DISCONNECT,READ,WRITE,WRITE_WITHOUT_RESPONSE,START_NOTIFICATION,STOP_NOTIFICATION,IS_ENABLED,IS_CONNECTED,ENABLE,SETTINGS};
 
+    TextToSpeech speech;
 
     // Bluetooth state notification
     CallbackContext stateCallback;
@@ -142,6 +146,19 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
     }
 
     @Override
+    protected void pluginInitialize() {
+        speech =new TextToSpeech(webView.getContext(), new TextToSpeech.OnInitListener() {
+            @Override
+            public void onInit(int status) {
+                if(status != TextToSpeech.ERROR) {
+                    speech.setLanguage(Locale.US);
+                }
+            }
+        });
+
+    }
+
+    @Override
     public boolean execute(final String action,final CordovaArgs args, final CallbackContext callbackContext) throws JSONException {
 
         LOG.d(TAG, "action = " + action);
@@ -174,6 +191,14 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
                         partialMatch = false;
                         resetScanOptions();
                         findLowEnergyDevices(callbackContext, serviceUUIDs, scanSeconds);
+                    } else if (action.equals(SAY)) {
+
+                        String textToSay = args.getString(0);
+
+                        if (speech!=null)
+                            speech.speak(textToSay, TextToSpeech.QUEUE_FLUSH, null, "BLE_MEASUREMENTS");
+
+
                     } else if (action.equals(PARTIAL_SCAN)) {
 
                         partialMatch = args.getBoolean(1);
