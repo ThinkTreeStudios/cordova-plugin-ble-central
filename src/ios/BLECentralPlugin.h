@@ -41,6 +41,7 @@
 @property (assign, nonatomic) BOOL    partialMatch;
 @property (strong, nonatomic) NSString* serviceUUIDString;
 
+- (void)say: (CDVInvokedUrlCommand *)command;
 - (void)scan:(CDVInvokedUrlCommand *)command;
 - (void)partialScan:(CDVInvokedUrlCommand *)command;
 - (void)startScan:(CDVInvokedUrlCommand *)command;
@@ -70,4 +71,3 @@
 @end
 
 #endif
-
