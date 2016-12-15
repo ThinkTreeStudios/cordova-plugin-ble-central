@@ -31,6 +31,7 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
 
+import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaArgs;
 import org.apache.cordova.CordovaPlugin;
@@ -103,7 +104,7 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
     private CallbackContext permissionCallback;
     private UUID[] serviceUUIDs; // An array of serviceUUIDs to scan for
     // NVF Added this to merge bluetooth changes 7/14/16
-    String serviceUUIDString; // When looking for a partial match this is the string to use
+    String[] serviceUUIDStrings; // When looking for a partial match this is the string to use
     boolean partialMatch = false; // Used when looking for a partial match
     private int scanSeconds;
     String [] validActions= {SCAN,SAY,PARTIAL_SCAN,START_SCAN,STOP_SCAN,START_SCAN_WITH_OPTIONS,FIND_PAIRED_DEVICE,LIST,CONNECT,DISCONNECT,READ,WRITE,WRITE_WITHOUT_RESPONSE,START_NOTIFICATION,STOP_NOTIFICATION,IS_ENABLED,IS_CONNECTED,ENABLE,SETTINGS};
@@ -177,9 +178,10 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
             return false;
 
 
-        cordova.getThreadPool().execute(new Runnable() {
+     //   cordova.getThreadPool().execute(new Runnable() {
+            cordova.getActivity().runOnUiThread(new Runnable() {
 
-            @Override
+                @Override
             public void run() {
 
                 try {
@@ -204,7 +206,8 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
                         partialMatch = args.getBoolean(1);
                         // For partial matches we will parse the first argument in the list passed to use later.
                         if (partialMatch) {
-                            serviceUUIDString = args.getJSONArray(0).getString(0).replace("-", "");  // This will be used to match when the scan results come back
+//                            serviceUUIDString = args.getJSONArray(0).getString(0).replace("-", "");  // This will be used to match when the scan results come back
+                              serviceUUIDStrings = parseServiceUUIDStringList(args.getJSONArray(0));
                             serviceUUIDs = null;
                         } else {
                             serviceUUIDs = parseServiceUUIDList(args.getJSONArray(0));
@@ -388,6 +391,18 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
 
         return serviceUUIDs.toArray(new UUID[jsonArray.length()]);
     }
+    private String [] parseServiceUUIDStringList(JSONArray jsonArray) throws JSONException {
+        List<String> serviceUUIDStrings = new ArrayList<String>();
+
+        for(int i = 0; i < jsonArray.length(); i++){
+            String uuidString = jsonArray.getString(i).replace("-", "");  // This will be used to match when the scan results come back;
+
+            serviceUUIDStrings.add(uuidString);
+        }
+
+        return serviceUUIDStrings.toArray(new String[jsonArray.length()]);
+    }
+
 
     private void onBluetoothStateChange(Intent intent) {
         final String action = intent.getAction();
@@ -594,7 +609,19 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
     private void findLowEnergyDevices(CallbackContext callbackContext, UUID[] serviceUUIDs, int scanSeconds) {
 
 
+       if(!PermissionHelper.hasPermission(this, ACCESS_COARSE_LOCATION)) {
+               // save info so we can call this method again after permissions are granted
+               permissionCallback = callbackContext;
+               this.serviceUUIDs = serviceUUIDs;
+               this.scanSeconds = scanSeconds;
+               PermissionHelper.requestPermission(this, REQUEST_ACCESS_COARSE_LOCATION, ACCESS_COARSE_LOCATION);
+               return;
+           }
 
+           // ignore if currently scanning, alternately could return an error
+           if (bluetoothAdapter.isDiscovering()) {
+               return;
+           }
 
         // TODO skip if currently scanning
 
@@ -751,13 +778,16 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
 
                     // If we're looking for a particular UUID then this will setup the success callback - otherwise we'll end up in failure
 
-                    if (uuids.get(i).toString().toLowerCase().replace("-", "").contains(serviceUUIDString)) { //scanString.toLowerCase().contains(serviceUUIDString)) {  // To Do: Check this for all serviceUUIDs? - could loop...
-                        if (discoverCallback != null) {
-                            PluginResult result = new PluginResult(PluginResult.Status.OK, peripheral.asJSONObject());
-                            result.setKeepCallback(true);
-                            discoverCallback.sendPluginResult(result);
-                            BLECentralPlugin.this.bluetoothAdapter.stopLeScan(BLECentralPlugin.this);
-                            found=true;
+                    for (int j=0;j<serviceUUIDStrings.length && !found;j++) {
+                        if (uuids.get(i).toString().toLowerCase().replace("-", "").contains(serviceUUIDStrings[j])) { //scanString.toLowerCase().contains(serviceUUIDString)) {  // To Do: Check this for all serviceUUIDs? - could loop...
+                            if (discoverCallback != null) {
+                                PluginResult result = new PluginResult(PluginResult.Status.OK, peripheral.asJSONObject());
+                                result.setKeepCallback(true);
+                                discoverCallback.sendPluginResult(result);
+                                // 12/09/16 - NVF Moved this into the javascript - come devices don't like so much bluetooth activity when connecting and return status 133 otherwise
+                               // BLECentralPlugin.this.bluetoothAdapter.stopLeScan(BLECentralPlugin.this);
+                                found = true;
+                            }
                         }
                     }
                 }
@@ -769,7 +799,9 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
                         PluginResult result = new PluginResult(PluginResult.Status.OK, peripheral.asJSONObject());
                         result.setKeepCallback(true);
                         discoverCallback.sendPluginResult(result);
-                        BLECentralPlugin.this.bluetoothAdapter.stopLeScan(BLECentralPlugin.this);
+                        // 12/09/16 - NVF Moved this into the javascript - come devices don't like so much bluetooth activity when connecting and return status 133 otherwise
+                        // BLECentralPlugin.this.bluetoothAdapter.stopLeScan(BLECentralPlugin.this);
+
                     }
                 }
             }

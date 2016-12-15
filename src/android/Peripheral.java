@@ -312,10 +312,10 @@ public class Peripheral extends BluetoothGattCallback {
 
         BluetoothGattService service = gatt.getService(serviceUUID);
         BluetoothGattCharacteristic characteristic = findNotifyCharacteristic(service, characteristicUUID);
-        String key = generateHashKey(serviceUUID, characteristic);
 
         if (characteristic != null) {
 
+            String key = generateHashKey(serviceUUID, characteristic);  //08/13/16 NVF Moved this to avoid coring if the service isn't found
             notificationCallbacks.put(key, callbackContext);
 
             if (gatt.setCharacteristicNotification(characteristic, true)) {
