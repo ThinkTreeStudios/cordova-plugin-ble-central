@@ -31,7 +31,7 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
 
-//import org.apache.commons.lang3.math.NumberUtils;
+import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaArgs;
 import org.apache.cordova.CordovaPlugin;
@@ -79,6 +79,8 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
 
     private static final String START_STATE_NOTIFICATIONS = "startStateNotifications";
     private static final String STOP_STATE_NOTIFICATIONS = "stopStateNotifications";
+    private static final byte[] EMPTY_ARRAY = new byte[0];
+
 
     // callbacks
     CallbackContext discoverCallback;
@@ -158,7 +160,6 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
         });
 
     }
-
     @Override
     public boolean execute(final String action,final CordovaArgs args, final CallbackContext callbackContext) throws JSONException {
 
@@ -178,202 +179,217 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
             return false;
 
 
-     //   cordova.getThreadPool().execute(new Runnable() {
-            cordova.getActivity().runOnUiThread(new Runnable() {
+       cordova.getThreadPool().execute(new Runnable() {
+           //       cordova.getActivity().runOnUiThread(new Runnable() {
 
-                @Override
-            public void run() {
-
-                try {
-
-                    if (action.equals(SCAN)) {
-
-                        serviceUUIDs = parseServiceUUIDList(args.getJSONArray(0));
-                        int scanSeconds = args.getInt(1);
-                        partialMatch = false;
-                        resetScanOptions();
-                        findLowEnergyDevices(callbackContext, serviceUUIDs, scanSeconds);
-                    } else if (action.equals(SAY)) {
-
-                        String textToSay = args.getString(0);
-
-                        if (speech!=null)
-                            speech.speak(textToSay, TextToSpeech.QUEUE_FLUSH, null, "BLE_MEASUREMENTS");
+           @Override
+           public void run() {
 
 
-                    } else if (action.equals(PARTIAL_SCAN)) {
+               try {
 
-                        partialMatch = args.getBoolean(1);
-                        // For partial matches we will parse the first argument in the list passed to use later.
-                        if (partialMatch) {
+                   if (action.equals(SCAN)) {
+
+                       serviceUUIDs = parseServiceUUIDList(args.getJSONArray(0));
+                       int scanSeconds = args.getInt(1);
+                       partialMatch = false;
+                       resetScanOptions();
+                       findLowEnergyDevices(callbackContext, serviceUUIDs, scanSeconds);
+                   } else if (action.equals(SAY)) {
+
+                       String textToSay = args.getString(0);
+
+                       if (speech != null)
+                           speech.speak(textToSay, TextToSpeech.QUEUE_FLUSH, null, "BLE_MEASUREMENTS");
+
+
+                   } else if (action.equals(PARTIAL_SCAN)) {
+
+
+                       partialMatch = args.getBoolean(1);
+                       // For partial matches we will parse the first argument in the list passed to use later.
+                       if (partialMatch) {
 //                            serviceUUIDString = args.getJSONArray(0).getString(0).replace("-", "");  // This will be used to match when the scan results come back
-                              serviceUUIDStrings = parseServiceUUIDStringList(args.getJSONArray(0));
-                            serviceUUIDs = null;
-                        } else {
-                            serviceUUIDs = parseServiceUUIDList(args.getJSONArray(0));
-                        }
-                        int scanSeconds = args.getInt(2);
-                        findLowEnergyDevices(callbackContext, serviceUUIDs, scanSeconds);
+                           serviceUUIDStrings = parseServiceUUIDStringList(args.getJSONArray(0));
+                           serviceUUIDs = null;
+                       } else {
+                           serviceUUIDs = parseServiceUUIDList(args.getJSONArray(0));
+                       }
+                       int scanSeconds = args.getInt(2);
+                       findLowEnergyDevices(callbackContext, serviceUUIDs, scanSeconds);
 
 
-                    } else if (action.equals(START_SCAN)) {
+                   } else if (action.equals(START_SCAN)) {
 
-                        UUID[] serviceUUIDs = parseServiceUUIDList(args.getJSONArray(0));
-                        resetScanOptions();
-                        findLowEnergyDevices(callbackContext, serviceUUIDs, -1);
+                       UUID[] serviceUUIDs = parseServiceUUIDList(args.getJSONArray(0));
+                       resetScanOptions();
+                       findLowEnergyDevices(callbackContext, serviceUUIDs, -1);
 
-                    } else if (action.equals(STOP_SCAN)) {
+                   } else if (action.equals(STOP_SCAN)) {
 
-                        bluetoothAdapter.stopLeScan(BLECentralPlugin.this);
-                        callbackContext.success();
+                       bluetoothAdapter.stopLeScan(BLECentralPlugin.this);
+                       callbackContext.success();
 
-                    } else if (action.equals(FIND_PAIRED_DEVICE)) {
+                   } else if (action.equals(FIND_PAIRED_DEVICE)) {
 
-                        BluetoothAdapter mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
-                        Set<BluetoothDevice> pairedDevices = mBluetoothAdapter.getBondedDevices();
+                       BluetoothAdapter mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+                       Set<BluetoothDevice> pairedDevices = mBluetoothAdapter.getBondedDevices();
 
-                        List<String> s = new ArrayList<String>();
-                        for (BluetoothDevice bt : pairedDevices) {
-                            //s.add(bt.getName());
-                            if (bt.getName().equalsIgnoreCase(args.getString(0)))
-                            {
-                                // We found a match
-                            }
-                        }
+                       boolean matchFound = false;
 
-                        callbackContext.success();
+                       List<String> s = new ArrayList<String>();
+                       for (BluetoothDevice bt : pairedDevices) {
+                           //s.add(bt.getName());
+                           if (bt.getName().equalsIgnoreCase(args.getString(0))) {
+                               // We found a match
+                               Peripheral peripheral = new Peripheral(bt, 0, EMPTY_ARRAY);
+                               peripherals.put(bt.getAddress(), peripheral);  // Add it to the list
+                               PluginResult result = new PluginResult(PluginResult.Status.OK, peripheral.asJSONObject());
+                               result.setKeepCallback(true);
+                               callbackContext.sendPluginResult(result);
+                               matchFound=true;
 
-                    } else if (action.equals(LIST)) {
+                           }
+                       }
+                       if (!matchFound) {
 
-                        listKnownDevices(callbackContext);
-
-                    } else if (action.equals(CONNECT)) {
-
-                        // 08/29/16 NVF Recoded as some devices require this to be in the UI Thread or they return a 133 and fail to connect.  (What's the reason?)
-                        final String macAddress = args.getString(0);
-                        cordova.getActivity().runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                connect(callbackContext, macAddress);
-                            }
-                        });
+                           callbackContext.error("No matching paired device");
+                       }
 
 
-                    } else if (action.equals(DISCONNECT)) {
+                   } else if (action.equals(LIST)) {
 
-                        String macAddress = args.getString(0);
-                        disconnect(callbackContext, macAddress);
+                       listKnownDevices(callbackContext);
 
-                    } else if (action.equals(READ)) {
+                   } else if (action.equals(CONNECT)) {
 
-                        String macAddress = args.getString(0);
-                        UUID serviceUUID = uuidFromString(args.getString(1));
-                        UUID characteristicUUID = uuidFromString(args.getString(2));
-                        read(callbackContext, macAddress, serviceUUID, characteristicUUID);
+                       // 08/29/16 NVF Recoded as some devices require this to be in the UI Thread or they return a 133 and fail to connect.  (What's the reason?)
+                       final String macAddress = args.getString(0);
+                       //connect(callbackContext, macAddress);
 
-                    } else if (action.equals(READ_RSSI)) {
-
-                        String macAddress = args.getString(0);
-                        readRSSI(callbackContext, macAddress);
-
-                    } else if (action.equals(WRITE)) {
-
-                        String macAddress = args.getString(0);
-                        UUID serviceUUID = uuidFromString(args.getString(1));
-                        UUID characteristicUUID = uuidFromString(args.getString(2));
-                        byte[] data = args.getArrayBuffer(3);
-                        int type = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT;
-                        write(callbackContext, macAddress, serviceUUID, characteristicUUID, data, type);
-
-                    } else if (action.equals(WRITE_WITHOUT_RESPONSE)) {
-
-                        String macAddress = args.getString(0);
-                        UUID serviceUUID = uuidFromString(args.getString(1));
-                        UUID characteristicUUID = uuidFromString(args.getString(2));
-                        byte[] data = args.getArrayBuffer(3);
-                        int type = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE;
-                        write(callbackContext, macAddress, serviceUUID, characteristicUUID, data, type);
-
-                    } else if (action.equals(START_NOTIFICATION)) {
-
-                        String macAddress = args.getString(0);
+                       cordova.getActivity().runOnUiThread(new Runnable() {
+                           @Override
+                           public void run() {
+                               connect(callbackContext, macAddress);
+                           }
+                       });
 
 
-                        UUID serviceUUID = uuidFromString(args.getString(1));
-                        UUID characteristicUUID = uuidFromString(args.getString(2));
-                        registerNotifyCallback(callbackContext, macAddress, serviceUUID, characteristicUUID);
+                   } else if (action.equals(DISCONNECT)) {
 
-                    } else if (action.equals(STOP_NOTIFICATION)) {
+                       String macAddress = args.getString(0);
+                       disconnect(callbackContext, macAddress);
 
-                        String macAddress = args.getString(0);
-                        UUID serviceUUID = uuidFromString(args.getString(1));
-                        UUID characteristicUUID = uuidFromString(args.getString(2));
-                        removeNotifyCallback(callbackContext, macAddress, serviceUUID, characteristicUUID);
+                   } else if (action.equals(READ)) {
 
-                    } else if (action.equals(IS_ENABLED)) {
+                       String macAddress = args.getString(0);
+                       UUID serviceUUID = uuidFromString(args.getString(1));
+                       UUID characteristicUUID = uuidFromString(args.getString(2));
+                       read(callbackContext, macAddress, serviceUUID, characteristicUUID);
 
-                        if (bluetoothAdapter.isEnabled()) {
-                            callbackContext.success();
-                        } else {
-                            callbackContext.error("Bluetooth is disabled.");
-                        }
+                   } else if (action.equals(READ_RSSI)) {
 
-                    } else if (action.equals(IS_CONNECTED)) {
+                       String macAddress = args.getString(0);
+                       readRSSI(callbackContext, macAddress);
 
-                        String macAddress = args.getString(0);
+                   } else if (action.equals(WRITE)) {
 
-                        if (peripherals.containsKey(macAddress) && peripherals.get(macAddress).isConnected()) {
-                            callbackContext.success();
-                        } else {
-                            callbackContext.error("Not connected.");
-                        }
+                       String macAddress = args.getString(0);
+                       UUID serviceUUID = uuidFromString(args.getString(1));
+                       UUID characteristicUUID = uuidFromString(args.getString(2));
+                       byte[] data = args.getArrayBuffer(3);
+                       int type = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT;
+                       write(callbackContext, macAddress, serviceUUID, characteristicUUID, data, type);
 
-                    } else if (action.equals(SETTINGS)) {
+                   } else if (action.equals(WRITE_WITHOUT_RESPONSE)) {
 
-                        Intent intent = new Intent(Settings.ACTION_BLUETOOTH_SETTINGS);
-                        cordova.getActivity().startActivity(intent);
-                        callbackContext.success();
+                       String macAddress = args.getString(0);
+                       UUID serviceUUID = uuidFromString(args.getString(1));
+                       UUID characteristicUUID = uuidFromString(args.getString(2));
+                       byte[] data = args.getArrayBuffer(3);
+                       int type = BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE;
+                       write(callbackContext, macAddress, serviceUUID, characteristicUUID, data, type);
 
-                    } else if (action.equals(ENABLE)) {
+                   } else if (action.equals(START_NOTIFICATION)) {
 
-                        enableBluetoothCallback = callbackContext;
-                        Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
-                        cordova.startActivityForResult(BLECentralPlugin.this, intent, REQUEST_ENABLE_BLUETOOTH);
+                       String macAddress = args.getString(0);
 
-                    } else if (action.equals(START_STATE_NOTIFICATIONS)) {
 
-                        if (getStateCallback() != null) {
-                            callbackContext.error("State callback already registered.");
-                        } else {
-                            setStateCallback(callbackContext);
-                            addStateListener();
-                            sendBluetoothStateChange(bluetoothAdapter.getState());
-                        }
+                       UUID serviceUUID = uuidFromString(args.getString(1));
+                       UUID characteristicUUID = uuidFromString(args.getString(2));
+                       registerNotifyCallback(callbackContext, macAddress, serviceUUID, characteristicUUID);
 
-                    } else if (action.equals(STOP_STATE_NOTIFICATIONS)) {
+                   } else if (action.equals(STOP_NOTIFICATION)) {
 
-                        if (getStateCallback() != null) {
-                            // Clear callback in JavaScript without actually calling it
-                            PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
-                            result.setKeepCallback(false);
-                            getStateCallback().sendPluginResult(result);
-                            setStateCallback(null);
-                        }
-                        removeStateListener();
-                        callbackContext.success();
+                       String macAddress = args.getString(0);
+                       UUID serviceUUID = uuidFromString(args.getString(1));
+                       UUID characteristicUUID = uuidFromString(args.getString(2));
+                       removeNotifyCallback(callbackContext, macAddress, serviceUUID, characteristicUUID);
 
-                    } else if (action.equals(START_SCAN_WITH_OPTIONS)) {
-                        UUID[] serviceUUIDs = parseServiceUUIDList(args.getJSONArray(0));
-                        JSONObject options = args.getJSONObject(1);
+                   } else if (action.equals(IS_ENABLED)) {
 
-                        resetScanOptions();
-                        setReportDuplicates(options.optBoolean("reportDuplicates", false));
-                        findLowEnergyDevices(callbackContext, serviceUUIDs, -1);
+                       if (bluetoothAdapter.isEnabled()) {
+                           callbackContext.success();
+                       } else {
+                           callbackContext.error("Bluetooth is disabled.");
+                       }
 
-                    }
-                } catch (JSONException e) {
-                    e.printStackTrace();
-                }
+                   } else if (action.equals(IS_CONNECTED)) {
+
+                       String macAddress = args.getString(0);
+
+                       if (peripherals.containsKey(macAddress) && peripherals.get(macAddress).isConnected()) {
+                           callbackContext.success();
+                       } else {
+                           callbackContext.error("Not connected.");
+                       }
+
+                   } else if (action.equals(SETTINGS)) {
+
+                       Intent intent = new Intent(Settings.ACTION_BLUETOOTH_SETTINGS);
+                       cordova.getActivity().startActivity(intent);
+                       callbackContext.success();
+
+                   } else if (action.equals(ENABLE)) {
+
+                       enableBluetoothCallback = callbackContext;
+                       Intent intent = new Intent(BluetoothAdapter.ACTION_REQUEST_ENABLE);
+                       cordova.startActivityForResult(BLECentralPlugin.this, intent, REQUEST_ENABLE_BLUETOOTH);
+
+                   } else if (action.equals(START_STATE_NOTIFICATIONS)) {
+
+                       if (getStateCallback() != null) {
+                           callbackContext.error("State callback already registered.");
+                       } else {
+                           setStateCallback(callbackContext);
+                           addStateListener();
+                           sendBluetoothStateChange(bluetoothAdapter.getState());
+                       }
+
+                   } else if (action.equals(STOP_STATE_NOTIFICATIONS)) {
+
+                       if (getStateCallback() != null) {
+                           // Clear callback in JavaScript without actually calling it
+                           PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
+                           result.setKeepCallback(false);
+                           getStateCallback().sendPluginResult(result);
+                           setStateCallback(null);
+                       }
+                       removeStateListener();
+                       callbackContext.success();
+
+                   } else if (action.equals(START_SCAN_WITH_OPTIONS)) {
+                       UUID[] serviceUUIDs = parseServiceUUIDList(args.getJSONArray(0));
+                       JSONObject options = args.getJSONObject(1);
+
+                       resetScanOptions();
+                       setReportDuplicates(options.optBoolean("reportDuplicates", false));
+                       findLowEnergyDevices(callbackContext, serviceUUIDs, -1);
+
+                   }
+               } catch (JSONException e) {
+                   e.printStackTrace();
+               }
 
             }
         });
@@ -934,3 +950,6 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
         return uuids;
     }
 }
+
+
+
