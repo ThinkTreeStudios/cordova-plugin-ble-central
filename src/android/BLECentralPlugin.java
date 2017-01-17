@@ -31,7 +31,6 @@ import android.os.Looper;
 import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
 
-import org.apache.commons.lang3.math.NumberUtils;
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaArgs;
 import org.apache.cordova.CordovaPlugin;
