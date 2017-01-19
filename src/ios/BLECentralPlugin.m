@@ -18,6 +18,7 @@
 
 #import "BLECentralPlugin.h"
 #import <Cordova/CDV.h>
+@import AVFoundation;
 
 @interface BLECentralPlugin() {
     NSDictionary *bluetoothStates;
@@ -65,6 +66,18 @@
 }
 
 #pragma mark - Cordova Plugin Methods
+
+
+- (void)say: (CDVInvokedUrlCommand *)command {
+
+    NSString *textToSpeak = [command.arguments objectAtIndex:0];
+    AVSpeechUtterance *utterance = [AVSpeechUtterance
+                                    speechUtteranceWithString:textToSpeak];
+
+    AVSpeechSynthesizer *synth = [[AVSpeechSynthesizer alloc] init];
+    [synth speakUtterance:utterance];
+
+}
 
 // 01/06/17 NVF Added to match Android side
 
@@ -579,15 +592,29 @@
 
     NSMutableArray *serviceUUIDStrings = [advertisementData objectForKey:CBAdvertisementDataServiceUUIDsKey];
 
-    if (partialMatch && serviceUUIDStrings!=nil && [ [[(CBUUID *)[serviceUUIDStrings objectAtIndex:0] UUIDString] stringByReplacingOccurrencesOfString:@"-" withString:@""] rangeOfString:serviceUUIDString options:NSCaseInsensitiveSearch].location != NSNotFound)  // Is the serviceUUID we're looking for contained in the serviceUUIDs advertised?
+    if (partialMatch)
     {
-        if (discoverPeripheralCallbackId) {
-            CDVPluginResult *pluginResult = nil;
-            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:[peripheral asDictionary]];
-            NSLog(@"Scan for partial UUID %@ Discovered %@",serviceUUIDString, [peripheral asDictionary]);
-            [pluginResult setKeepCallbackAsBool:TRUE];
-            [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripheralCallbackId];
+
+        // 9/1/16 - NVF Changed to look through all the advertised services for a match
+        for (int i=0;i<serviceUUIDStrings.count;i++)
+        {
+            if (serviceUUIDStrings!=nil && [ [[(CBUUID *)[serviceUUIDStrings objectAtIndex:i] UUIDString] stringByReplacingOccurrencesOfString:@"-" withString:@""] rangeOfString:serviceUUIDString options:NSCaseInsensitiveSearch].location != NSNotFound)  // Is the serviceUUID we're looking for contained in the serviceUUIDs advertised?
+            {
+                if (discoverPeripheralCallbackId) {
+                    CDVPluginResult *pluginResult = nil;
+                    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:[peripheral asDictionary]];
+                    NSLog(@"Scan for partial UUID %@ Discovered %@",serviceUUIDString, [peripheral asDictionary]);
+                    [pluginResult setKeepCallbackAsBool:TRUE];
+                    [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripheralCallbackId];
+                }
+            }
+            else
+            {
+                // If we're not looking for a match, just build the list of peripherals
+                NSLog(@"Scan with no service UUID and no partial match Discovered %@", [peripheral asDictionary]);
+            }
         }
+
     }
     else if (!partialMatch && serviceUUIDStrings!=nil)  // We've got a result from a specific serviceUUID search
     {
@@ -880,6 +907,18 @@
 
 
 // RedBearLab
+-(CBService *) findServiceFromUUIDOld:(CBUUID *)UUID p:(CBPeripheral *)p
+{
+    for(int i = 0; i < p.services.count; i++)
+    {
+        CBService *s = [p.services objectAtIndex:i];
+        if ([self compareCBUUID:s.UUID UUID2:UUID])
+            return s;
+    }
+
+    return nil; //Service not found on this peripheral
+}
+
 -(CBService *) findServiceFromUUID:(CBUUID *)UUID p:(CBPeripheral *)p
 {
     for(int i = 0; i < p.services.count; i++)
