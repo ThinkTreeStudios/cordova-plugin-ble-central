@@ -41,6 +41,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.JSONException;
 
+import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.*;
@@ -239,14 +240,17 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
                        List<String> s = new ArrayList<String>();
                        for (BluetoothDevice bt : pairedDevices) {
                            //s.add(bt.getName());
-                           if (bt.getName().equalsIgnoreCase(args.getString(0))) {
+
+                           if (bt.getName().toLowerCase().contains(args.getString(0).toLowerCase()))
+                           {
+                           //if (bt.getName().equalsIgnoreCase(args.getString(0))) {
                                // We found a match
                                Peripheral peripheral = new Peripheral(bt, 0, EMPTY_ARRAY);
                                peripherals.put(bt.getAddress(), peripheral);  // Add it to the list
                                PluginResult result = new PluginResult(PluginResult.Status.OK, peripheral.asJSONObject());
                                result.setKeepCallback(true);
                                callbackContext.sendPluginResult(result);
-                               matchFound=true;
+                               matchFound = true;
 
                            }
                        }
@@ -265,6 +269,46 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
                        // 08/29/16 NVF Recoded as some devices require this to be in the UI Thread or they return a 133 and fail to connect.  (What's the reason?)
                        final String macAddress = args.getString(0);
                        //connect(callbackContext, macAddress);
+                      /* if (peripherals.size() == 0) {
+                           Peripheral peripheral = new Peripheral(bt, 0, EMPTY_ARRAY);
+                           peripherals.put(macAddress, peripheral);  // Add it to the list
+
+                       }
+                       */
+                       // Try to put it in the paired list if it's not there already
+                       BluetoothAdapter mBluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+                       Set<BluetoothDevice> pairedDevices = mBluetoothAdapter.getBondedDevices();
+
+                       boolean matchFound = false;
+                       List<String> s = new ArrayList<String>();
+                       for (BluetoothDevice bt : pairedDevices) {
+                           //s.add(bt.getName());
+                           if (bt.getAddress().equalsIgnoreCase(macAddress)) {
+                               // We found a match
+                               matchFound = true;
+                               if (peripherals.size()==0)
+                               {
+                                   // If we haven't scanned yet, just put the one we found in our list of peripherals
+                                   Peripheral peripheral = new Peripheral(bt, 0, EMPTY_ARRAY);
+                                   peripherals.put(bt.getAddress(), peripheral);  // Add it to the list
+
+
+                               }
+
+                           }
+                       }
+                       // Not in the paired list but we found some devices in our last scan
+                       if (peripherals.size()>0) {
+
+                           Peripheral peripheral = peripherals.get(macAddress);
+                           if (peripheral!=null) {
+
+                               if (matchFound) {
+                                   LOG.d(TAG, "Adding " + peripheral.asJSONObject() + " to paired list");
+                                   pairDevice(peripheral.getDevice());
+                               }
+                           }
+                       }
 
                        cordova.getActivity().runOnUiThread(new Runnable() {
                            @Override
@@ -390,10 +434,29 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
                    e.printStackTrace();
                }
 
-            }
-        });
+           }
+       });
 
                     return true;
+    }
+
+     private void pairDevice(BluetoothDevice device) {
+        try {
+            Method method = device.getClass().getMethod("createBond", (Class[]) null);
+            method.invoke(device, (Object[]) null);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void unpairDevice(BluetoothDevice device) {
+        try {
+            Method method = device.getClass().getMethod("removeBond", (Class[]) null);
+            method.invoke(device, (Object[]) null);
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     private UUID[] parseServiceUUIDList(JSONArray jsonArray) throws JSONException {
