@@ -84,7 +84,7 @@
 - (void)findPairedDevice:(CDVInvokedUrlCommand*)command {
     NSLog(@"findPairedDevice");
     
-    NSString *uuid = [command.arguments objectAtIndex:0];
+    NSString *uuid = [command.arguments objectAtIndex:1];
     NSString *c = @"0000XXXX-0000-1000-8000-00805f9b34fb";
     
     discoverPeripheralCallbackId = [command.callbackId copy];
