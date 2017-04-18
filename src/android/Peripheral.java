@@ -603,8 +603,79 @@ public class Peripheral extends BluetoothGattCallback {
         processCommands();
     }
 
-    // process the queue
+
     private void processCommands() {
+        LOG.d(TAG,"Processing Commands");
+
+        if (bleProcessing) { return; }
+
+        final BLECommand command = commandQueue.poll();
+
+        if (command != null) {
+
+
+            bleProcessing = true;
+
+            // NVF Added this for the wearable to slow down processing to avoid a bug
+
+            int delay = 0;
+
+            // 4/18/17 - NVF Added for delay for wearable writes
+            if (command.getData()[0]==0x6f) {
+                delay = (command.getType() == BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)?2000:0;
+
+            }
+
+            new java.util.Timer().schedule(
+                    new java.util.TimerTask() {
+                        @Override
+                        public void run() {
+
+
+
+
+                            if (command.getType() == BLECommand.READ) {
+                                LOG.d(TAG,"Read " + command.getCharacteristicUUID());
+                                bleProcessing = true;
+                                readCharacteristic(command.getCallbackContext(), command.getServiceUUID(), command.getCharacteristicUUID());
+                            } else if (command.getType() == BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) {
+                                LOG.d(TAG,"Write " + command.getCharacteristicUUID());
+                                bleProcessing = true;
+                                writeCharacteristic(command.getCallbackContext(), command.getServiceUUID(), command.getCharacteristicUUID(), command.getData(), command.getType());
+                            } else if (command.getType() == BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE) {
+                                LOG.d(TAG,"Write No Response " + command.getCharacteristicUUID());
+                                bleProcessing = true;
+                                writeCharacteristic(command.getCallbackContext(), command.getServiceUUID(), command.getCharacteristicUUID(), command.getData(), command.getType());
+                            } else if (command.getType() == BLECommand.REGISTER_NOTIFY) {
+                                LOG.d(TAG,"Register Notify " + command.getCharacteristicUUID());
+                                bleProcessing = true;
+                                registerNotifyCallback(command.getCallbackContext(), command.getServiceUUID(), command.getCharacteristicUUID());
+                            } else if (command.getType() == BLECommand.REMOVE_NOTIFY) {
+                                LOG.d(TAG,"Remove Notify " + command.getCharacteristicUUID());
+                                bleProcessing = true;
+                                removeNotifyCallback(command.getCallbackContext(), command.getServiceUUID(), command.getCharacteristicUUID());
+                            } else if (command.getType() == BLECommand.READ_RSSI) {
+                                LOG.d(TAG,"Read RSSI");
+                                bleProcessing = true;
+                                readRSSI(command.getCallbackContext());
+                            } else {
+                                // this shouldn't happen
+                                bleProcessing = false;
+                                throw new RuntimeException("Unexpected BLE Command type " + command.getType());
+
+                            }
+
+                        }
+                    }, delay);
+
+        } else {
+            LOG.d(TAG, "Command Queue is empty.");
+        }
+
+    }
+
+    // process the queue
+    private void processCommandsOld() {
         LOG.d(TAG,"Processing Commands");
 
         if (bleProcessing) { return; }

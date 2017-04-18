@@ -263,9 +263,15 @@
 
     BLECommandContext *context = [self getData:command prop:CBCharacteristicPropertyWrite];
     NSData *message = [command.arguments objectAtIndex:3]; // This is binary
+
     if (context) {
 
         if (message != nil) {
+
+            // 04/18/17 NVF Added as a test to see if this will help stop wearable lockups
+            if (((unsigned char*)[message bytes])[0] == 0x6f)
+                usleep(2000000);
+
 
             CBPeripheral *peripheral = [context peripheral];
             CBCharacteristic *characteristic = [context characteristic];
