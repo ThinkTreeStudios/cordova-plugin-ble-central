@@ -740,7 +740,9 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
         // Default to call the failure callback unless we find something
         PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
         result.setKeepCallback(true);
-        callbackContext.sendPluginResult(result);
+
+        if (callbackContext!=null)          // 5/6/17 - NVF Added this to avoid cores - not sure if it will cause other issues instead of figuring out why...
+            callbackContext.sendPluginResult(result);
     }
 
     private void listKnownDevices(CallbackContext callbackContext) {
