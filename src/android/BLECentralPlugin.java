@@ -109,6 +109,7 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
     // NVF Added this to merge bluetooth changes 7/14/16
     String[] serviceUUIDStrings; // When looking for a partial match this is the string to use
     boolean partialMatch = false; // Used when looking for a partial match
+    String  lastAction="";
     private int scanSeconds;
     String [] validActions= {SCAN,SAY,PARTIAL_SCAN,START_SCAN,STOP_SCAN,START_SCAN_WITH_OPTIONS,FIND_PAIRED_DEVICE,LIST,CONNECT,DISCONNECT,READ,WRITE,WRITE_WITHOUT_RESPONSE,START_NOTIFICATION,STOP_NOTIFICATION,IS_ENABLED,IS_CONNECTED,ENABLE,SETTINGS};
 
@@ -377,7 +378,20 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
                    } else if (action.equals(IS_ENABLED)) {
 
                        if (bluetoothAdapter.isEnabled()) {
-                           callbackContext.success();
+
+                           if(!PermissionHelper.hasPermission(BLECentralPlugin.this, ACCESS_COARSE_LOCATION)) {
+                               // save info so we can call this method again after permissions are granted
+                               permissionCallback = callbackContext;
+                               lastAction = action;
+
+                               PermissionHelper.requestPermission(BLECentralPlugin.this, REQUEST_ACCESS_COARSE_LOCATION, ACCESS_COARSE_LOCATION);
+                               return;
+                           }
+                           else {
+
+
+                               callbackContext.success();
+                           }
                        } else {
                            callbackContext.error("Bluetooth is disabled.");
                        }
@@ -927,23 +941,36 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
     public void onRequestPermissionResult(int requestCode, String[] permissions,
                                           int[] grantResults) /* throws JSONException */ {
         for(int result:grantResults) {
-            if(result == PackageManager.PERMISSION_DENIED)
-            {
+            if (result == PackageManager.PERMISSION_DENIED) {
                 LOG.d(TAG, "User *rejected* Coarse Location Access");
-                this.permissionCallback.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, PERMISSION_DENIED_ERROR));
+
+                if (lastAction.equals(IS_ENABLED)) {
+                    this.permissionCallback.error("Bluetooth permissions denied.");
+                } else {
+
+                    this.permissionCallback.sendPluginResult(new PluginResult(PluginResult.Status.ERROR, PERMISSION_DENIED_ERROR));
+                }
                 return;
+            } else if (result== PackageManager.PERMISSION_GRANTED)
+            {
+                switch (requestCode) {
+                    case REQUEST_ACCESS_COARSE_LOCATION:
+                        LOG.d(TAG, "User granted Coarse Location Access");
+
+                        if (lastAction.equals(IS_ENABLED)) {
+
+                            this.permissionCallback.success();
+                        } else {
+                            findLowEnergyDevices(permissionCallback, serviceUUIDs, scanSeconds);
+                            this.permissionCallback = null;
+                            this.serviceUUIDs = null;
+                            this.scanSeconds = -1;
+                        }
+                        break;
+                }
             }
         }
 
-        switch(requestCode) {
-            case REQUEST_ACCESS_COARSE_LOCATION:
-                LOG.d(TAG, "User granted Coarse Location Access");
-                findLowEnergyDevices(permissionCallback, serviceUUIDs, scanSeconds);
-                this.permissionCallback = null;
-                this.serviceUUIDs = null;
-                this.scanSeconds = -1;
-                break;
-        }
     }
 
     private UUID uuidFromString(String uuid) {
