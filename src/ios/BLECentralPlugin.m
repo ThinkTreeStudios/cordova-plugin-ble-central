@@ -35,6 +35,9 @@
 @synthesize partialMatch;
 @synthesize serviceUUIDString;
 
+static time_t lastSend=0;
+NSMutableArray *commandQueue;
+
 - (void)pluginInitialize {
 
     NSLog(@"Cordova BLE Central Plugin");
@@ -42,6 +45,7 @@
 
     [super pluginInitialize];
 
+    commandQueue = [NSMutableArray array];
     peripherals = [NSMutableSet set];
     manager = [[CBCentralManager alloc] initWithDelegate:self queue:nil];
 
@@ -66,6 +70,29 @@
 }
 
 #pragma mark - Cordova Plugin Methods
+
+-(id)queuePop {
+    @synchronized(commandQueue)
+    {
+        if ([commandQueue count] == 0) {
+            return nil;
+        }
+
+        id queueObject = [commandQueue objectAtIndex:0];
+
+        [commandQueue removeObjectAtIndex:0];
+
+        return queueObject;
+    }
+}
+
+// Add to the tail of the queue
+-(void)queuePush:(id)anObject {
+    @synchronized(commandQueue)
+    {
+        [commandQueue addObject:anObject];
+    }
+}
 
 
 - (void)say: (CDVInvokedUrlCommand *)command {
@@ -258,8 +285,23 @@
 
 }
 
+void dispatch_after_delay(float delayInSeconds, dispatch_queue_t queue, dispatch_block_t block) {
+    dispatch_time_t popTime = dispatch_time(DISPATCH_TIME_NOW, delayInSeconds * NSEC_PER_SEC);
+    dispatch_after(popTime, queue, block);
+}
+
+void dispatch_after_delay_on_main_queue(float delayInSeconds, dispatch_block_t block) {
+    dispatch_queue_t queue = dispatch_get_main_queue();
+    dispatch_after_delay(delayInSeconds, queue, block);
+}
+
+void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_block_t block) {
+    dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0);
+    dispatch_after_delay(delayInSeconds, queue, block);
+}
+
 // write: function (device_id, service_uuid, characteristic_uuid, value, success, failure) {
-- (void)write:(CDVInvokedUrlCommand*)command {
+- (void)writeOld:(CDVInvokedUrlCommand*)command {
 
     BLECommandContext *context = [self getData:command prop:CBCharacteristicPropertyWrite];
     NSData *message = [command.arguments objectAtIndex:3]; // This is binary
@@ -293,8 +335,126 @@
 
 }
 
-// writeWithoutResponse: function (device_id, service_uuid, characteristic_uuid, value, success, failure) {
+//5/25/17 - NVF Changed to try to execute these on a delayed background thread instead
+
+- (void)write:(CDVInvokedUrlCommand*)command {
+
+    BLECommandContext *context = [self getData:command prop:CBCharacteristicPropertyWrite];
+    NSData *message = [command.arguments objectAtIndex:3]; // This is binary
+
+    if (((unsigned char*)[message bytes])[0] == 0x6f)
+    {
+
+        dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0);
+        dispatch_after_delay(2, queue,^(void){
+
+            if (context) {
+
+                if (message != nil) {
+
+
+                    CBPeripheral *peripheral = [context peripheral];
+                    CBCharacteristic *characteristic = [context characteristic];
+
+                    NSString *key = [self keyForPeripheral: peripheral andCharacteristic:characteristic];
+                    [writeCallbacks setObject:[command.callbackId copy] forKey:key];
+
+                    // TODO need to check the max length
+                    [peripheral writeValue:message forCharacteristic:characteristic type:CBCharacteristicWriteWithResponse];
+
+                    // response is sent from didWriteValueForCharacteristic
+
+                } else {
+                    CDVPluginResult *pluginResult = nil;
+                    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"message was null"];
+                    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+                }
+            }
+
+        });
+    }
+    else
+    {
+        if (context) {
+
+            if (message != nil) {
+
+
+                CBPeripheral *peripheral = [context peripheral];
+                CBCharacteristic *characteristic = [context characteristic];
+
+                NSString *key = [self keyForPeripheral: peripheral andCharacteristic:characteristic];
+                [writeCallbacks setObject:[command.callbackId copy] forKey:key];
+
+                // TODO need to check the max length
+                [peripheral writeValue:message forCharacteristic:characteristic type:CBCharacteristicWriteWithResponse];
+
+                // response is sent from didWriteValueForCharacteristic
+
+            } else {
+                CDVPluginResult *pluginResult = nil;
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"message was null"];
+                [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+            }
+        }
+
+    }
+
+}
 - (void)writeWithoutResponse:(CDVInvokedUrlCommand*)command {
+
+    BLECommandContext *context = [self getData:command prop:CBCharacteristicPropertyWrite];
+    NSData *message = [command.arguments objectAtIndex:3]; // This is binary
+
+    if (((unsigned char*)[message bytes])[0] == 0x3)
+    {
+
+        dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0);
+        dispatch_after_delay(2, queue,^(void){
+
+            if (context) {
+                CDVPluginResult *pluginResult = nil;
+                if (message != nil) {
+                    CBPeripheral *peripheral = [context peripheral];
+                    CBCharacteristic *characteristic = [context characteristic];
+
+                    // TODO need to check the max length
+                    [peripheral writeValue:message forCharacteristic:characteristic type:CBCharacteristicWriteWithoutResponse];
+
+                    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+                } else {
+                    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"message was null"];
+                }
+                [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+            }
+
+        });
+    }
+    else
+    {
+        if (context) {
+            CDVPluginResult *pluginResult = nil;
+            if (message != nil) {
+                CBPeripheral *peripheral = [context peripheral];
+                CBCharacteristic *characteristic = [context characteristic];
+
+                // TODO need to check the max length
+                [peripheral writeValue:message forCharacteristic:characteristic type:CBCharacteristicWriteWithoutResponse];
+
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+            } else {
+                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"message was null"];
+            }
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+        }
+
+    }
+
+}
+
+
+// writeWithoutResponse: function (device_id, service_uuid, characteristic_uuid, value, success, failure) {
+- (void)writeWithoutResponseOld:(CDVInvokedUrlCommand*)command {
     NSLog(@"writeWithoutResponse");
 
     BLECommandContext *context = [self getData:command prop:CBCharacteristicPropertyWriteWithoutResponse];
