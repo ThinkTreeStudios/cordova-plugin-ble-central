@@ -35,7 +35,15 @@
 @synthesize partialMatch;
 @synthesize serviceUUIDString;
 
-static time_t lastSend=0;
+
+#define ADD_DELAYS      // Define this to add delays for the ichoiceWearable
+
+static double lastSend=0.0;
+static float WEARABLE_SEND_DELAY = 2.0;  // Seconds
+static float  writeDelay=0.0;
+static int transaction=0;
+
+
 NSMutableArray *commandQueue;
 
 - (void)pluginInitialize {
@@ -77,11 +85,11 @@ NSMutableArray *commandQueue;
         if ([commandQueue count] == 0) {
             return nil;
         }
-
+        
         id queueObject = [commandQueue objectAtIndex:0];
-
+        
         [commandQueue removeObjectAtIndex:0];
-
+        
         return queueObject;
     }
 }
@@ -300,70 +308,134 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
     dispatch_after_delay(delayInSeconds, queue, block);
 }
 
-// write: function (device_id, service_uuid, characteristic_uuid, value, success, failure) {
-- (void)writeOld:(CDVInvokedUrlCommand*)command {
+#ifndef ADD_DELAYS
 
+// write: function (device_id, service_uuid, characteristic_uuid, value, success, failure) {
+- (void)write:(CDVInvokedUrlCommand*)command {
+    
     BLECommandContext *context = [self getData:command prop:CBCharacteristicPropertyWrite];
     NSData *message = [command.arguments objectAtIndex:3]; // This is binary
-
+    
+   
+    
     if (context) {
-
+        
         if (message != nil) {
-
+            
             // 04/18/17 NVF Added as a test to see if this will help stop wearable lockups
+            /* not used anymore rewrote
             if (((unsigned char*)[message bytes])[0] == 0x6f)
+            {
+                NSLog(@"Delayed write %d (1)",transaction);
+
                 usleep(2000000);
-
-
+            }
+            else
+                NSLog(@"NonDelayed write %d (1)",transaction);
+             */
+            
+            
+            NSLog(@"NonDelayed write %d (2)",transaction);
             CBPeripheral *peripheral = [context peripheral];
             CBCharacteristic *characteristic = [context characteristic];
-
+            
             NSString *key = [self keyForPeripheral: peripheral andCharacteristic:characteristic];
             [writeCallbacks setObject:[command.callbackId copy] forKey:key];
-
+            
             // TODO need to check the max length
             [peripheral writeValue:message forCharacteristic:characteristic type:CBCharacteristicWriteWithResponse];
-
+            
             // response is sent from didWriteValueForCharacteristic
-
+            
         } else {
             CDVPluginResult *pluginResult = nil;
             pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"message was null"];
             [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
         }
     }
-
+    
 }
 
+// writeWithoutResponse: function (device_id, service_uuid, characteristic_uuid, value, success, failure) {
+- (void)writeWithoutResponse:(CDVInvokedUrlCommand*)command {
+    int localTransaction = transaction++;
+    
+    NSLog(@"writeWithoutResponse");
+    NSLog(@"NonDelayed write %d (1) confirmation",localTransaction);
+    
+    BLECommandContext *context = [self getData:command prop:CBCharacteristicPropertyWriteWithoutResponse];
+    NSData *message = [command.arguments objectAtIndex:3]; // This is binary
+    
+    if (context) {
+        CDVPluginResult *pluginResult = nil;
+        if (message != nil) {
+            CBPeripheral *peripheral = [context peripheral];
+            CBCharacteristic *characteristic = [context characteristic];
+            
+            // TODO need to check the max length
+            [peripheral writeValue:message forCharacteristic:characteristic type:CBCharacteristicWriteWithoutResponse];
+            
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+        } else {
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"message was null"];
+        }
+        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+    }
+}
+#else
 //5/25/17 - NVF Changed to try to execute these on a delayed background thread instead
 
 - (void)write:(CDVInvokedUrlCommand*)command {
-
+    
     BLECommandContext *context = [self getData:command prop:CBCharacteristicPropertyWrite];
     NSData *message = [command.arguments objectAtIndex:3]; // This is binary
-
-    if (((unsigned char*)[message bytes])[0] == 0x6f)
+    float localWriteDelay=0;
+    int   localTransaction = transaction;
+    
+    
+    if (context && message && (((unsigned char*)[message bytes])[0] == 0x6f || ([[context peripheral].name rangeOfString:@"L38"].location != NSNotFound) ))
     {
+        if (((unsigned char*)[message bytes])[0] == 0x6f)   // Only delay the first part of a multipart send
+        {
+            double elapsed = [[NSDate date] timeIntervalSince1970] - lastSend;
+            
 
-        dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0);
-        dispatch_after_delay(2, queue,^(void){
-
+            if (elapsed<WEARABLE_SEND_DELAY)
+            {
+                writeDelay = (WEARABLE_SEND_DELAY - (float)elapsed);
+            }
+            else
+            {
+                writeDelay = 0.0;
+            }
+        }
+        localWriteDelay = writeDelay;
+        
+        lastSend = ([[NSDate date] timeIntervalSince1970] + (double)writeDelay);
+        
+        NSLog(@"Delayed write %d (1) %f",localTransaction,localWriteDelay);
+       
+        dispatch_queue_t queue = dispatch_get_main_queue(); //dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0);
+        //dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0);
+        
+        dispatch_after_delay(writeDelay, queue,^(void){
+            
             if (context) {
-
+                
                 if (message != nil) {
-
-
+                    
+                     NSLog(@"Delayed write %d (2) %f",localTransaction,localWriteDelay);;
                     CBPeripheral *peripheral = [context peripheral];
                     CBCharacteristic *characteristic = [context characteristic];
-
+                    
                     NSString *key = [self keyForPeripheral: peripheral andCharacteristic:characteristic];
                     [writeCallbacks setObject:[command.callbackId copy] forKey:key];
-
+                    
                     // TODO need to check the max length
                     [peripheral writeValue:message forCharacteristic:characteristic type:CBCharacteristicWriteWithResponse];
-
+                    
                     // response is sent from didWriteValueForCharacteristic
-
+                    
                 } else {
                     CDVPluginResult *pluginResult = nil;
                     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"message was null"];
@@ -375,107 +447,106 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
     }
     else
     {
+        
+
         if (context) {
-
+            
             if (message != nil) {
-
-
+                
+                NSLog(@"NonDelayed write %d (1) %f",localTransaction,localWriteDelay);
                 CBPeripheral *peripheral = [context peripheral];
                 CBCharacteristic *characteristic = [context characteristic];
-
+                
                 NSString *key = [self keyForPeripheral: peripheral andCharacteristic:characteristic];
                 [writeCallbacks setObject:[command.callbackId copy] forKey:key];
-
+                
                 // TODO need to check the max length
                 [peripheral writeValue:message forCharacteristic:characteristic type:CBCharacteristicWriteWithResponse];
-
+                
                 // response is sent from didWriteValueForCharacteristic
-
+                
             } else {
                 CDVPluginResult *pluginResult = nil;
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"message was null"];
                 [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
             }
         }
-
+        
     }
-
+    
 }
 - (void)writeWithoutResponse:(CDVInvokedUrlCommand*)command {
-
+    
     BLECommandContext *context = [self getData:command prop:CBCharacteristicPropertyWrite];
     NSData *message = [command.arguments objectAtIndex:3]; // This is binary
+    float localWriteDelay=0;
+    int localTransaction = transaction++;
+    
 
-    if (((unsigned char*)[message bytes])[0] == 0x3)
+    if (((unsigned char*)[message bytes])[0] == 0x3)    // Wearable write confirmation
     {
+ 
+        lastSend = ([[NSDate date] timeIntervalSince1970] + (double)writeDelay);  // writeDelay is not calculated again as the writeWithoutResponse comes immediately after the write for the wearable
+        
+        localWriteDelay = writeDelay;
+        NSLog(@"Delayed write %d (1) confirm %f",localTransaction,localWriteDelay);
 
-        dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0);
-        dispatch_after_delay(2, queue,^(void){
+        dispatch_queue_t queue = dispatch_get_main_queue(); //dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0);
+        
+        //dispatch_queue_t queue = dispatch_queue_create("com.thinktree.backgroundDelay", NULL);
 
+        //dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0);
+        dispatch_after_delay(writeDelay, queue,^(void){
+        //dispatch_after_delay(0, queue,^(void){
+            
             if (context) {
+                
+               
+                NSLog(@"Delayed write %d (2) confirm %f",localTransaction,localWriteDelay);
+                
                 CDVPluginResult *pluginResult = nil;
                 if (message != nil) {
                     CBPeripheral *peripheral = [context peripheral];
                     CBCharacteristic *characteristic = [context characteristic];
-
+                    
                     // TODO need to check the max length
                     [peripheral writeValue:message forCharacteristic:characteristic type:CBCharacteristicWriteWithoutResponse];
-
+                    
                     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
                 } else {
                     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"message was null"];
                 }
                 [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
             }
-
+            
         });
+        // dispatch_release(queue); // release the thread if its one of ours
     }
     else
     {
         if (context) {
             CDVPluginResult *pluginResult = nil;
             if (message != nil) {
+                NSLog(@"NonDelayed write %d (1) confirmation %f",localTransaction,localWriteDelay);
+
                 CBPeripheral *peripheral = [context peripheral];
                 CBCharacteristic *characteristic = [context characteristic];
-
+                
                 // TODO need to check the max length
                 [peripheral writeValue:message forCharacteristic:characteristic type:CBCharacteristicWriteWithoutResponse];
-
+                
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
             } else {
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"message was null"];
             }
             [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
         }
-
+        
     }
-
+    
 }
 
-
-// writeWithoutResponse: function (device_id, service_uuid, characteristic_uuid, value, success, failure) {
-- (void)writeWithoutResponseOld:(CDVInvokedUrlCommand*)command {
-    NSLog(@"writeWithoutResponse");
-
-    BLECommandContext *context = [self getData:command prop:CBCharacteristicPropertyWriteWithoutResponse];
-    NSData *message = [command.arguments objectAtIndex:3]; // This is binary
-
-    if (context) {
-        CDVPluginResult *pluginResult = nil;
-        if (message != nil) {
-            CBPeripheral *peripheral = [context peripheral];
-            CBCharacteristic *characteristic = [context characteristic];
-
-            // TODO need to check the max length
-            [peripheral writeValue:message forCharacteristic:characteristic type:CBCharacteristicWriteWithoutResponse];
-
-            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
-        } else {
-            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"message was null"];
-        }
-        [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
-    }
-}
+#endif
 
 // success callback is called on notification
 // notify: function (device_id, service_uuid, characteristic_uuid, success, failure) {
