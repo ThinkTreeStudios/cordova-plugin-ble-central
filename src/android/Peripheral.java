@@ -306,53 +306,61 @@ public class Peripheral extends BluetoothGattCallback {
         boolean success = false;
 
         if (gatt == null) {
-            callbackContext.error("BluetoothGatt is null");
+            callbackContext.error("registerNotifyCallback:BluetoothGatt is null");
             return;
         }
 
         BluetoothGattService service = gatt.getService(serviceUUID);
-        BluetoothGattCharacteristic characteristic = findNotifyCharacteristic(service, characteristicUUID);
+        if (service==null) { //8/18/17 - NVF Added this check to protect against bad coding in the js scripts causing core dumps...
 
-        if (characteristic != null) {
+            callbackContext.error("registerNotifyCallback:service " + serviceUUID + " not found");
+        }
+        else {
 
-            String key = generateHashKey(serviceUUID, characteristic);  //08/13/16 NVF Moved this to avoid coring if the service isn't found
-            notificationCallbacks.put(key, callbackContext);
 
-            if (gatt.setCharacteristicNotification(characteristic, true)) {
+            BluetoothGattCharacteristic characteristic = findNotifyCharacteristic(service, characteristicUUID);
 
-                // Why doesn't setCharacteristicNotification write the descriptor?
-                BluetoothGattDescriptor descriptor = characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIGURATION_UUID);
-                if (descriptor != null) {
+            if (characteristic != null) {
 
-                    // prefer notify over indicate
-                    if ((characteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0) {
-                        descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
-                    } else if ((characteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0) {
-                        descriptor.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
+                String key = generateHashKey(serviceUUID, characteristic);  //08/13/16 NVF Moved this to avoid coring if the service isn't found
+                notificationCallbacks.put(key, callbackContext);
+
+                if (gatt.setCharacteristicNotification(characteristic, true)) {
+
+                    // Why doesn't setCharacteristicNotification write the descriptor?
+                    BluetoothGattDescriptor descriptor = characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIGURATION_UUID);
+                    if (descriptor != null) {
+
+                        // prefer notify over indicate
+                        if ((characteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_NOTIFY) != 0) {
+                            descriptor.setValue(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE);
+                        } else if ((characteristic.getProperties() & BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0) {
+                            descriptor.setValue(BluetoothGattDescriptor.ENABLE_INDICATION_VALUE);
+                        } else {
+                            LOG.w(TAG, "Characteristic " + characteristicUUID + " does not have NOTIFY or INDICATE property set");
+                        }
+
+                        if (gatt.writeDescriptor(descriptor)) {
+                            success = true;
+                        } else {
+                            callbackContext.error("registerNotifyCallback:Failed to set client characteristic notification for " + characteristicUUID);
+                        }
+
                     } else {
-                        LOG.w(TAG, "Characteristic " + characteristicUUID + " does not have NOTIFY or INDICATE property set");
-                    }
-
-                    if (gatt.writeDescriptor(descriptor)) {
-                        success = true;
-                    } else {
-                        callbackContext.error("Failed to set client characteristic notification for " + characteristicUUID);
+                        callbackContext.error("registerNotifyCallback:Set notification failed for " + characteristicUUID);
                     }
 
                 } else {
-                    callbackContext.error("Set notification failed for " + characteristicUUID);
+                    callbackContext.error("registerNotifyCallback:Failed to register notification for " + characteristicUUID);
                 }
 
             } else {
-                callbackContext.error("Failed to register notification for " + characteristicUUID);
+                callbackContext.error("registerNotifyCallback:Characteristic " + characteristicUUID + " not found");
             }
 
-        } else {
-            callbackContext.error("Characteristic " + characteristicUUID + " not found");
-        }
-
-        if (!success) {
-            commandCompleted();
+            if (!success) {
+                commandCompleted();
+            }
         }
     }
 
