@@ -122,6 +122,7 @@ NSMutableArray *commandQueue;
     NSString *uuid = [command.arguments objectAtIndex:1];
     NSString *c = @"0000XXXX-0000-1000-8000-00805f9b34fb";
     NSString *peripheralId = [command.arguments objectAtIndex:2];
+    Boolean found = false;
 
     discoverPeripheralCallbackId = [command.callbackId copy];
     // NVF Added to normalize the strings before comparing
@@ -149,6 +150,7 @@ NSMutableArray *commandQueue;
             for(CBPeripheral *peripheral in peripheralArray)
             {
                 NSLog(@"Found Peripheral - %@", peripheral);
+                found = true;
                 [peripherals addObject:peripheral];
                 if (discoverPeripheralCallbackId) {
                     CDVPluginResult *pluginResult = nil;
@@ -161,48 +163,46 @@ NSMutableArray *commandQueue;
 
             }
         }
+    }
         // There are no known Peripherals so we check for connected Peripherals if any - this is a search by service - use the advertised service
-        else
+    if (!found)
+    {
+
+        CBUUID *cbUUID = [CBUUID UUIDWithString: uuid];
+
+        NSArray *connectedPeripheralArray = [manager retrieveConnectedPeripheralsWithServices:@[cbUUID]];
+
+        // If there are connected Peripherals
+        if([connectedPeripheralArray count] > 0)
         {
-
-            CBUUID *cbUUID = [CBUUID UUIDWithString: uuid];
-
-            NSArray *connectedPeripheralArray = [manager retrieveConnectedPeripheralsWithServices:@[cbUUID]];
-
-            // If there are connected Peripherals
-            if([connectedPeripheralArray count] > 0)
+            for(CBPeripheral *peripheral in connectedPeripheralArray)
             {
-                for(CBPeripheral *peripheral in connectedPeripheralArray)
-                {
-                    NSLog(@"Found Peripheral - %@", peripheral);
-                    [peripherals addObject:peripheral];
+                NSLog(@"Found Peripheral - %@", peripheral);
+                [peripherals addObject:peripheral];
+                found = true;
 
-                    if (discoverPeripheralCallbackId) {
-                        CDVPluginResult *pluginResult = nil;
-                        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:[peripheral asDictionary]];
-                        NSLog(@"Search for UUID %@ Discovered Connected peripheral %@",uuid, [peripheral asDictionary]);
-                        [pluginResult setKeepCallbackAsBool:TRUE];
-                        [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripheralCallbackId];
-                    }
-
-
+                if (discoverPeripheralCallbackId) {
+                    CDVPluginResult *pluginResult = nil;
+                    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:[peripheral asDictionary]];
+                    NSLog(@"Search for UUID %@ Discovered Connected peripheral %@",uuid, [peripheral asDictionary]);
+                    [pluginResult setKeepCallbackAsBool:TRUE];
+                    [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripheralCallbackId];
                 }
-            }
-            // Else there are no available Peripherals
-            else
-            {
-                NSString *error = [NSString stringWithFormat:@"Could not find paired peripheral %@.", uuid];
-                NSLog(@"%@", error);
-                CDVPluginResult *pluginResult = nil;
-                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error];
-                [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripheralCallbackId];
+
 
             }
         }
+        // Else there are no available Peripherals
+        else
+        {
+            NSString *error = [NSString stringWithFormat:@"Could not find paired peripheral %@.", uuid];
+            NSLog(@"%@", error);
+            CDVPluginResult *pluginResult = nil;
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripheralCallbackId];
+
+        }
     }
-
-
-
 
 }
 
