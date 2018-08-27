@@ -67,12 +67,12 @@ module.exports = {
 
     },
 
-    findPairedDevice: function (name, service, success, failure) {
+    findPairedDevice: function (name, service, peripheralId, success, failure) {
         var successWrapper = function(peripheral) {
             convertToNativeJS(peripheral);
             success(peripheral);
         };
-        cordova.exec(successWrapper, failure, 'BLE', 'findPairedDevice', [name,service]);
+        cordova.exec(successWrapper, failure, 'BLE', 'findPairedDevice', [name,service,peripheralId]);
     },
 
     startScan: function (services, success, failure) {

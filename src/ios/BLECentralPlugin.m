@@ -122,7 +122,9 @@ NSMutableArray *commandQueue;
     
     NSString *uuid = [command.arguments objectAtIndex:1];
     NSString *c = @"0000XXXX-0000-1000-8000-00805f9b34fb";
-    
+    NSString *peripheralId = [command.arguments objectAtIndex:2];
+    Boolean found = false;
+
     discoverPeripheralCallbackId = [command.callbackId copy];
     // NVF Added to normalize the strings before comparing
     if (uuid.length==4)
@@ -131,85 +133,78 @@ NSMutableArray *commandQueue;
                                          withString:uuid];
     }
 
-    
-    [self retrievePeripheral: uuid];
+    // 01/06/17 NVF Added based on this and apple sources
+    // http://stackoverflow.com/questions/19143687/ios-7-corebluetooth-retrieveperipheralswithidentifiers-not-retrieving
 
-}
+    NSUUID *nsUUID = [[NSUUID UUID] initWithUUIDString:peripheralId];
 
-// 01/06/17 NVF Added based on
-// http://stackoverflow.com/questions/19143687/ios-7-corebluetooth-retrieveperipheralswithidentifiers-not-retrieving
-// To get a possible list of bonded devices by the UUID - not sure if we can do this by name?
-// UUID calculated like this:
-// NSString *uuidString = [NSString stringWithFormat:@"%@", [[peripheral identifier] UUIDString]];
-// TODO: Try to retreive by name or possibly change the android version to retrieve by UUID but that might be device specific...
-
-- (void)retrievePeripheral:(NSString *)uuidString
-{
-    
-    NSUUID *nsUUID = [[NSUUID UUID] initWithUUIDString:uuidString];
-    
     if(nsUUID)
     {
+        // This function uses the peripheralID to look for peripherals already in the paired list - you have to save them in order to be able to look again...
+        // However, if you subsequently unpair them, they still won't disappear from this list.  Ask Apple why not. Maybe forget doesn't mean forget at Apple.
+
         NSArray *peripheralArray = [manager retrievePeripheralsWithIdentifiers:@[nsUUID]];
-        
+
         // Check for known Peripherals
         if([peripheralArray count] > 0)
         {
             for(CBPeripheral *peripheral in peripheralArray)
             {
                 NSLog(@"Found Peripheral - %@", peripheral);
+                found = true;
                 [peripherals addObject:peripheral];
                 if (discoverPeripheralCallbackId) {
                     CDVPluginResult *pluginResult = nil;
                     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:[peripheral asDictionary]];
-                    NSLog(@"Search for UUID %@ Discovered known peripheral %@",uuidString, [peripheral asDictionary]);
+                    NSLog(@"Search for UUID %@ Discovered known peripheral %@",peripheralId, [peripheral asDictionary]);
                     [pluginResult setKeepCallbackAsBool:TRUE];
                     [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripheralCallbackId];
                 }
 
-                
-            }
-        }
-        // There are no known Peripherals so we check for connected Peripherals if any
-        else
-        {
-            
-            CBUUID *cbUUID = [CBUUID UUIDWithString: uuidString];
-            
-            NSArray *connectedPeripheralArray = [manager retrieveConnectedPeripheralsWithServices:@[cbUUID]];
-            
-            // If there are connected Peripherals
-            if([connectedPeripheralArray count] > 0)
-            {
-                for(CBPeripheral *peripheral in connectedPeripheralArray)
-                {
-                    NSLog(@"Found Peripheral - %@", peripheral);
-                    [peripherals addObject:peripheral];
-                    
-                    if (discoverPeripheralCallbackId) {
-                        CDVPluginResult *pluginResult = nil;
-                        pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:[peripheral asDictionary]];
-                        NSLog(@"Search for UUID %@ Discovered Connected peripheral %@",uuidString, [peripheral asDictionary]);
-                        [pluginResult setKeepCallbackAsBool:TRUE];
-                        [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripheralCallbackId];
-                    }
 
-                    
-                }
-            }
-            // Else there are no available Peripherals
-            else
-            {
-                NSString *error = [NSString stringWithFormat:@"Could not find paired peripheral %@.", uuidString];
-                NSLog(@"%@", error);
-                CDVPluginResult *pluginResult = nil;
-                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error];
-                [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripheralCallbackId];
-                
             }
         }
     }
-    
+        // There are no known Peripherals so we check for connected Peripherals if any - this is a search by service - use the advertised service
+    if (!found)
+    {
+
+        CBUUID *cbUUID = [CBUUID UUIDWithString: uuid];
+
+        NSArray *connectedPeripheralArray = [manager retrieveConnectedPeripheralsWithServices:@[cbUUID]];
+
+        // If there are connected Peripherals
+        if([connectedPeripheralArray count] > 0)
+        {
+            for(CBPeripheral *peripheral in connectedPeripheralArray)
+            {
+                NSLog(@"Found Peripheral - %@", peripheral);
+                [peripherals addObject:peripheral];
+                found = true;
+
+                if (discoverPeripheralCallbackId) {
+                    CDVPluginResult *pluginResult = nil;
+                    pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsDictionary:[peripheral asDictionary]];
+                    NSLog(@"Search for UUID %@ Discovered Connected peripheral %@",uuid, [peripheral asDictionary]);
+                    [pluginResult setKeepCallbackAsBool:TRUE];
+                    [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripheralCallbackId];
+                }
+
+
+            }
+        }
+        // Else there are no available Peripherals
+        else
+        {
+            NSString *error = [NSString stringWithFormat:@"Could not find paired peripheral %@.", uuid];
+            NSLog(@"%@", error);
+            CDVPluginResult *pluginResult = nil;
+            pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:discoverPeripheralCallbackId];
+
+        }
+    }
+
 }
 
 - (void)connect:(CDVInvokedUrlCommand *)command {
