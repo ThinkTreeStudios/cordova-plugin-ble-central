@@ -632,7 +632,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
     CBPeripheral *peripheral = [self findPeripheralByUUID:uuid];
     NSNumber *delay = [command.arguments objectAtIndex:1];
 
-    WEARABLE_SEND_DELAY = [delay floatValue];
+    WEARABLE_SEND_DELAY = [delay floatValue]/1000.0f;
 
     CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];

@@ -123,7 +123,7 @@ module.exports = {
     },
 
     setWriteDelay: function(device_id, delay, success, failure) {
-        cordova.exec(success, failure, 'BLE', 'readRSSI', [device_id,delay]);
+        cordova.exec(success, failure, 'BLE', 'setWriteDelay', [device_id,delay]);
     },
 
     // value must be an ArrayBuffer
