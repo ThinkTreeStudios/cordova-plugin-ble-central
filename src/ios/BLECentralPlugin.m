@@ -114,6 +114,7 @@ NSMutableArray *commandQueue;
 
 }
 
+
 // 01/06/17 NVF Added to match Android side
 
 - (void)findPairedDevice:(CDVInvokedUrlCommand*)command {
@@ -629,6 +630,21 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
                                     repeats:NO];
 
 }
+
+- (void)setWriteDelay:(CDVInvokedUrlCommand*)command {
+
+    NSString *uuid = [command.arguments objectAtIndex:0];
+    CBPeripheral *peripheral = [self findPeripheralByUUID:uuid];
+    NSNumber *delay = [command.arguments objectAtIndex:1];
+
+    WEARABLE_SEND_DELAY = [delay floatValue];
+
+    CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
+    [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+
+
+}
+
 
 - (void)partialScan:(CDVInvokedUrlCommand*)command {
 

@@ -57,6 +57,7 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
     private static final String STOP_SCAN = "stopScan";
     private static final String START_SCAN_WITH_OPTIONS = "startScanWithOptions";
     private static final String FIND_PAIRED_DEVICE = "findPairedDevice";
+    private static final String SET_WRITE_DELAY = "setWriteDelay";
 
     private static final String LIST = "list";
 
@@ -111,7 +112,7 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
     boolean partialMatch = false; // Used when looking for a partial match
     String  lastAction="";
     private int scanSeconds;
-    String [] validActions= {SCAN,SAY,PARTIAL_SCAN,START_SCAN,STOP_SCAN,START_SCAN_WITH_OPTIONS,FIND_PAIRED_DEVICE,LIST,CONNECT,DISCONNECT,READ,WRITE,WRITE_WITHOUT_RESPONSE,START_NOTIFICATION,STOP_NOTIFICATION,IS_ENABLED,IS_CONNECTED,ENABLE,SETTINGS};
+    String [] validActions= {SCAN,SAY,PARTIAL_SCAN,START_SCAN,STOP_SCAN,START_SCAN_WITH_OPTIONS,FIND_PAIRED_DEVICE,LIST,CONNECT,DISCONNECT,READ,WRITE,WRITE_WITHOUT_RESPONSE,START_NOTIFICATION,STOP_NOTIFICATION,IS_ENABLED,IS_CONNECTED,ENABLE,SETTINGS,SET_WRITE_DELAY};
 
     TextToSpeech speech;
 
@@ -328,6 +329,11 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
 
                        String macAddress = args.getString(0);
                        disconnect(callbackContext, macAddress);
+                   } else if (action.equals(SET_WRITE_DELAY)) {
+                       String macAddress = args.getString(0);
+                       int delay = args.getInt(1);
+                       Peripheral peripheral = peripherals.get(macAddress);
+                       peripheral.bleWriteDelay = delay;
 
                    } else if (action.equals(READ)) {
 
