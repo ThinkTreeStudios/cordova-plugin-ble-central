@@ -45,6 +45,7 @@ public class Peripheral extends BluetoothGattCallback {
     private boolean connected = false;
     private ConcurrentLinkedQueue<BLECommand> commandQueue = new ConcurrentLinkedQueue<BLECommand>();
     private boolean bleProcessing;
+    public int bleWriteDelay=2000;
 
     BluetoothGatt gatt;
 
@@ -630,7 +631,7 @@ public class Peripheral extends BluetoothGattCallback {
 
             // 4/18/17 - NVF Added for delay for wearable writes
             if (command.getData()!=null && command.getData()[0]==0x6f) {
-                delay = (command.getType() == BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)?2000:0;
+                delay = (command.getType() == BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)?bleWriteDelay:0;
 
             }
 
