@@ -42,9 +42,21 @@ static double lastSend=0.0;
 static float WEARABLE_SEND_DELAY = 2.0;  // Seconds
 static float  writeDelay=0.0;
 static int transaction=0;
-
+/*
+   private CallbackContext callbackContext;
+    private UUID serviceUUID;
+    private UUID characteristicUUID;
+    private byte[] data;
+    private int type;
+ 
+ Class BLECommand {
+ 
+ }
+*/
 
 NSMutableArray *commandQueue;
+Boolean bleProcessing = false;
+
 
 - (void)pluginInitialize {
 
@@ -56,6 +68,7 @@ NSMutableArray *commandQueue;
     commandQueue = [NSMutableArray array];
     peripherals = [NSMutableSet set];
     manager = [[CBCentralManager alloc] initWithDelegate:self queue:nil];
+    
 
     connectCallbacks = [NSMutableDictionary new];
     connectCallbackLatches = [NSMutableDictionary new];
@@ -79,28 +92,43 @@ NSMutableArray *commandQueue;
 
 #pragma mark - Cordova Plugin Methods
 
--(id)queuePop {
-    @synchronized(commandQueue)
-    {
-        if ([commandQueue count] == 0) {
-            return nil;
-        }
-        
-        id queueObject = [commandQueue objectAtIndex:0];
-        
-        [commandQueue removeObjectAtIndex:0];
-        
-        return queueObject;
+
+-(CDVInvokedUrlCommand*)commandQueuePop {
+  @synchronized(commandQueue)
+  {
+    if ([commandQueue count] == 0) {
+        return nil;
     }
+
+    id queueObject = [commandQueue objectAtIndex:0];
+
+    [commandQueue removeObjectAtIndex:0];
+
+    return queueObject;
+  }
+}
+
+-(CDVInvokedUrlCommand*)commandQueuePoll{
+  @synchronized(commandQueue)
+  {
+    if ([commandQueue count] == 0) {
+        return nil;
+    }
+
+    id queueObject =[commandQueue objectAtIndex:0];
+
+    return queueObject;
+  }
 }
 
 // Add to the tail of the queue
--(void)queuePush:(id)anObject {
-    @synchronized(commandQueue)
-    {
-        [commandQueue addObject:anObject];
-    }
+-(void)commandQueuePush:(CDVInvokedUrlCommand*)anObject {
+  @synchronized(commandQueue)
+  {
+    [commandQueue addObject:anObject];
+  }
 }
+
 
 
 - (void)say: (CDVInvokedUrlCommand *)command {
@@ -272,7 +300,7 @@ NSMutableArray *commandQueue;
 }
 
 // read: function (device_id, service_uuid, characteristic_uuid, success, failure) {
-- (void)read:(CDVInvokedUrlCommand*)command {
+- (void)readEx:(CDVInvokedUrlCommand*)command {
     NSLog(@"read");
 
     BLECommandContext *context = [self getData:command prop:CBCharacteristicPropertyRead];
@@ -304,6 +332,70 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
     dispatch_after_delay(delayInSeconds, queue, block);
 }
 
+- (void)queueCommand:(CDVInvokedUrlCommand*)command {
+    
+    [self commandQueuePush: command];
+    
+    if (!bleProcessing) {
+        [self processCommands];
+    }
+}
+
+- (void)read:(CDVInvokedUrlCommand*)command {
+    [self queueCommand:command];
+}
+- (void)write:(CDVInvokedUrlCommand*)command {
+    [self queueCommand: command];
+}
+
+- (void)writeWithoutResponse:(CDVInvokedUrlCommand*)command {
+   [self queueCommand:command];
+}
+
+- (void)startNotification:(CDVInvokedUrlCommand*)command {
+    [self queueCommand:command];
+}
+- (void)stopNotification:(CDVInvokedUrlCommand*)command {
+    [self queueCommand:command];
+}
+
+- (void)processCommands {
+
+    if (bleProcessing) { return; }
+
+
+    CDVInvokedUrlCommand* command = [self commandQueuePoll];
+
+    if (command != nil) {
+
+        bleProcessing = true;
+        if ([command.methodName isEqualToString: @"read"]) {
+                [self readEx: command];
+        } else if ([command.methodName isEqualToString: @"write"]) {
+                [self writeEx: command];
+        } else if ([command.methodName isEqualToString: @"writeWithoutResponse"]) {
+                [self writeWithoutResponseEx: command];
+        } else if ([command.methodName isEqualToString: @"startNotification"]) {
+            [self startNotificationEx: command];
+        } else if ([command.methodName isEqualToString: @"stopNotification"]) {
+            [self stopNotificationEx: command];
+        } else {
+              // this shouldn't happen
+              bleProcessing = false;
+            NSLog(@"Skipping unknown command in process commands");
+        }
+    }
+
+}
+
+- (void )commandCompleted {
+        NSLog(@"Processing Complete");
+    CDVInvokedUrlCommand* command = [self commandQueuePop] ; // Pop the last command and process the next one.
+        bleProcessing = false;
+        [self processCommands];
+}
+
+
 #ifndef ADD_DELAYS
 
 // write: function (device_id, service_uuid, characteristic_uuid, value, success, failure) {
@@ -312,25 +404,10 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
     BLECommandContext *context = [self getData:command prop:CBCharacteristicPropertyWrite];
     NSData *message = [command.arguments objectAtIndex:3]; // This is binary
     
-   
-    
     if (context) {
         
         if (message != nil) {
-            
-            // 04/18/17 NVF Added as a test to see if this will help stop wearable lockups
-            /* not used anymore rewrote
-            if (((unsigned char*)[message bytes])[0] == 0x6f)
-            {
-                NSLog(@"Delayed write %d (1)",transaction);
 
-                usleep(2000000);
-            }
-            else
-                NSLog(@"NonDelayed write %d (1)",transaction);
-             */
-            
-            
             NSLog(@"NonDelayed write %d (2)",transaction);
             CBPeripheral *peripheral = [context peripheral];
             CBCharacteristic *characteristic = [context characteristic];
@@ -381,13 +458,13 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
 #else
 //5/25/17 - NVF Changed to try to execute these on a delayed background thread instead
 
-- (void)write:(CDVInvokedUrlCommand*)command {
+- (void)writeEx:(CDVInvokedUrlCommand*)command {
     
     BLECommandContext *context = [self getData:command prop:CBCharacteristicPropertyWrite];
     NSData *message = [command.arguments objectAtIndex:3]; // This is binary
     float localWriteDelay=0;
     int   localTransaction = transaction;
-    
+
     
     if (context && message && (((unsigned char*)[message bytes])[0] == 0x6f || ([[context peripheral].name rangeOfString:@"L38"].location != NSNotFound) ))
     {
@@ -409,7 +486,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
         
         lastSend = ([[NSDate date] timeIntervalSince1970] + (double)writeDelay);
         
-        NSLog(@"Delayed write %d (1) %f",localTransaction,localWriteDelay);
+        NSLog(@"Delayed write %d %2.2x (1) %f",localTransaction,((unsigned char*)[message bytes])[1],localWriteDelay);
        
         dispatch_queue_t queue = dispatch_get_main_queue(); //dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0);
         //dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_BACKGROUND, 0);
@@ -420,7 +497,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
                 
                 if (message != nil) {
                     
-                     NSLog(@"Delayed write %d (2) %f",localTransaction,localWriteDelay);;
+                     NSLog(@"Delayed write %d %2.2x (2) %f",localTransaction,((unsigned char*)[message bytes])[1],localWriteDelay);;
                     CBPeripheral *peripheral = [context peripheral];
                     CBCharacteristic *characteristic = [context characteristic];
                     
@@ -471,7 +548,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
     }
     
 }
-- (void)writeWithoutResponse:(CDVInvokedUrlCommand*)command {
+- (void)writeWithoutResponseEx:(CDVInvokedUrlCommand*)command {
     
     BLECommandContext *context = [self getData:command prop:CBCharacteristicPropertyWrite];
     NSData *message = [command.arguments objectAtIndex:3]; // This is binary
@@ -498,7 +575,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
             if (context) {
                 
                
-                NSLog(@"Delayed write %d (2) confirm %f",localTransaction,localWriteDelay);
+                NSLog(@"Delayed write %d %2.2x (2) confirm %f",localTransaction,((unsigned char*)[message bytes])[1],localWriteDelay);
                 
                 CDVPluginResult *pluginResult = nil;
                 if (message != nil) {
@@ -514,6 +591,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
                 }
                 [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
             }
+          [self commandCompleted]; // Done in onWrite
             
         });
         // dispatch_release(queue); // release the thread if its one of ours
@@ -536,6 +614,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"message was null"];
             }
             [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
+            [self commandCompleted];
         }
         
     }
@@ -544,9 +623,10 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
 
 #endif
 
+
 // success callback is called on notification
 // notify: function (device_id, service_uuid, characteristic_uuid, success, failure) {
-- (void)startNotification:(CDVInvokedUrlCommand*)command {
+- (void)startNotificationEx:(CDVInvokedUrlCommand*)command {
     NSLog(@"registering for notification");
 
     BLECommandContext *context = [self getData:command prop:CBCharacteristicPropertyNotify]; // TODO name this better
@@ -566,7 +646,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
 }
 
 // stopNotification: function (device_id, service_uuid, characteristic_uuid, success, failure) {
-- (void)stopNotification:(CDVInvokedUrlCommand*)command {
+- (void)stopNotificationEx:(CDVInvokedUrlCommand*)command {
     NSLog(@"registering for notification");
 
     BLECommandContext *context = [self getData:command prop:CBCharacteristicPropertyNotify]; // TODO name this better
@@ -632,7 +712,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
     CBPeripheral *peripheral = [self findPeripheralByUUID:uuid];
     NSNumber *delay = [command.arguments objectAtIndex:1];
 
-    WEARABLE_SEND_DELAY = [delay floatValue]/1000.0f;
+    WEARABLE_SEND_DELAY = [delay floatValue]/500.0f;
 
     CDVPluginResult *pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK];
     [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
@@ -1001,6 +1081,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsArrayBuffer:data];
         [pluginResult setKeepCallbackAsBool:TRUE]; // keep for notification
         [self.commandDelegate sendPluginResult:pluginResult callbackId:notifyCallbackId];
+     //   [self commandCompleted];  This is for async notifies
     }
 
     NSString *readCallbackId = [readCallbacks objectForKey:key];
@@ -1011,6 +1092,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
         CDVPluginResult *pluginResult = nil;
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsArrayBuffer:data];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:readCallbackId];
+ //         [self commandCompleted];
 
         [readCallbacks removeObjectForKey:key];
     }
@@ -1044,7 +1126,9 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
         NSLog(@"%@", error);
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:[error localizedDescription]];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:notificationCallbackId];
+       
     }
+    [self commandCompleted];
 
 }
 
@@ -1068,8 +1152,9 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
         }
         [self.commandDelegate sendPluginResult:pluginResult callbackId:writeCallbackId];
         [writeCallbacks removeObjectForKey:key];
+     
     }
-
+       [self commandCompleted];
 }
 
 - (void)peripheralDidUpdateRSSI:(CBPeripheral*)peripheral error:(NSError*)error {
@@ -1093,6 +1178,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
         }
         [self.commandDelegate sendPluginResult:pluginResult callbackId: readRSSICallbackId];
         [readRSSICallbacks removeObjectForKey:readRSSICallbackId];
+         [self commandCompleted];
     }
 }
 
