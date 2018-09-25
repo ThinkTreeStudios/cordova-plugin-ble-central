@@ -54,8 +54,9 @@ static int transaction=0;
  }
 */
 
-NSMutableArray *commandQueue;
-Boolean bleProcessing = false;
+
+
+
 
 
 - (void)pluginInitialize {
@@ -65,7 +66,9 @@ Boolean bleProcessing = false;
 
     [super pluginInitialize];
 
-    commandQueue = [NSMutableArray array];
+    // Important note: The key to the commandQueueDict and bleProcessing is the peripheral UUID
+    commandQueueDict = [NSMutableDictionary new];
+    bleProcessing = [NSMutableDictionary new];
     peripherals = [NSMutableSet set];
     manager = [[CBCentralManager alloc] initWithDelegate:self queue:nil];
     
@@ -93,40 +96,68 @@ Boolean bleProcessing = false;
 #pragma mark - Cordova Plugin Methods
 
 
--(CDVInvokedUrlCommand*)commandQueuePop {
-  @synchronized(commandQueue)
-  {
-    if ([commandQueue count] == 0) {
-        return nil;
+-(CDVInvokedUrlCommand*)commandQueuePop:(CDVInvokedUrlCommand*)anObject  {
+    NSString *key = [self getKeyFromCommand:anObject];
+    return [self commandQueuePopKey:key];
+}
+-(CDVInvokedUrlCommand*)commandQueuePopKey:(NSString *)key  {
+    @synchronized(commandQueueDict)
+    {
+        [self setCurrentCommandQueueByKey: key];
+        
+        @synchronized(commandQueue)
+        {
+            if ([commandQueue count] == 0) {
+                return nil;
+            }
+            
+            id queueObject = [commandQueue objectAtIndex:0];
+            
+            [commandQueue removeObjectAtIndex:0];
+            
+            return queueObject;
+        }
     }
-
-    id queueObject = [commandQueue objectAtIndex:0];
-
-    [commandQueue removeObjectAtIndex:0];
-
-    return queueObject;
-  }
+}
+-(CDVInvokedUrlCommand*)commandQueuePollKey:(NSString *)key {
+    
+    @synchronized(commandQueueDict)
+    {
+        [self setCurrentCommandQueueByKey: key];
+        
+        @synchronized(commandQueue)
+        {
+            
+            if ([commandQueue count] == 0) {
+                return nil;
+            }
+            
+            id queueObject =[commandQueue objectAtIndex:0];
+            
+            return queueObject;
+        }
+    }
 }
 
--(CDVInvokedUrlCommand*)commandQueuePoll{
-  @synchronized(commandQueue)
-  {
-    if ([commandQueue count] == 0) {
-        return nil;
-    }
-
-    id queueObject =[commandQueue objectAtIndex:0];
-
-    return queueObject;
-  }
+-(CDVInvokedUrlCommand*)commandQueuePoll:(CDVInvokedUrlCommand*)anObject {
+    
+    NSString *key = [self getKeyFromCommand:anObject];
+    return [self commandQueuePollKey:key];
 }
 
 // Add to the tail of the queue
 -(void)commandQueuePush:(CDVInvokedUrlCommand*)anObject {
-  @synchronized(commandQueue)
-  {
-    [commandQueue addObject:anObject];
-  }
+    
+    @synchronized(commandQueueDict)
+    {
+      [self setCurrentCommandQueue: anObject];
+
+      @synchronized(commandQueue)
+      {
+
+        [commandQueue addObject:anObject];
+      }
+    }
 }
 
 
@@ -332,13 +363,36 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
     dispatch_after_delay(delayInSeconds, queue, block);
 }
 
+- (NSString *)getKeyFromCommand:(CDVInvokedUrlCommand*) command {
+    BLECommandContext *context = [self getData:command prop:CBCharacteristicPropertyWrite];
+    CBPeripheral *peripheral = [context peripheral];
+    NSString *key = [self keyForPeripheral: peripheral ];
+
+    return key;
+}
+
+- (void)setCurrentCommandQueue: (CDVInvokedUrlCommand*)command {
+    
+    NSString *key = [self getKeyFromCommand:command];
+    [self setCurrentCommandQueueByKey:key];
+    
+}
+
+- (void)setCurrentCommandQueueByKey: (NSString *) key{
+    
+    commandQueue = [commandQueueDict objectForKey: key];
+    if (!commandQueue) {
+        [commandQueueDict setObject: [NSMutableArray array] forKey: key];
+        commandQueue = [commandQueueDict objectForKey: key];
+    }
+    
+}
+
 - (void)queueCommand:(CDVInvokedUrlCommand*)command {
     
     [self commandQueuePush: command];
+    [self processCommands: command];
     
-    if (!bleProcessing) {
-        [self processCommands];
-    }
 }
 
 - (void)read:(CDVInvokedUrlCommand*)command {
@@ -359,41 +413,60 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
     [self queueCommand:command];
 }
 
-- (void)processCommands {
-
-    if (bleProcessing) { return; }
-
-
-    CDVInvokedUrlCommand* command = [self commandQueuePoll];
-
+- (void)processCommandsKey:(NSString *)key  {
+    
+    [self setCurrentCommandQueueByKey: key];
+    
+    
+ 
+    if ( [[bleProcessing objectForKey: key] isEqualToString: @"true"]) { return; }
+    
+    CDVInvokedUrlCommand* command = [self commandQueuePollKey: key];
+    
     if (command != nil) {
-
-        bleProcessing = true;
+        
+   
+        [bleProcessing setObject: @"true" forKey: key];
+        
         if ([command.methodName isEqualToString: @"read"]) {
-                [self readEx: command];
+            [self readEx: command];
         } else if ([command.methodName isEqualToString: @"write"]) {
-                [self writeEx: command];
+            [self writeEx: command];
         } else if ([command.methodName isEqualToString: @"writeWithoutResponse"]) {
-                [self writeWithoutResponseEx: command];
+            [self writeWithoutResponseEx: command];
         } else if ([command.methodName isEqualToString: @"startNotification"]) {
             [self startNotificationEx: command];
         } else if ([command.methodName isEqualToString: @"stopNotification"]) {
             [self stopNotificationEx: command];
         } else {
-              // this shouldn't happen
-              bleProcessing = false;
+            // this shouldn't happen
+            
+             [bleProcessing setObject: @"false" forKey: key];
             NSLog(@"Skipping unknown command in process commands");
         }
     }
-
+    
 }
 
-- (void )commandCompleted {
-        NSLog(@"Processing Complete");
-    CDVInvokedUrlCommand* command = [self commandQueuePop] ; // Pop the last command and process the next one.
-        bleProcessing = false;
-        [self processCommands];
+- (void)processCommands:(CDVInvokedUrlCommand*)commandKey  {
+
+    NSString *key = [self getKeyFromCommand:commandKey];
+    [self processCommandsKey: key];
+ 
 }
+
+- (void )commandCompleted: (CDVInvokedUrlCommand*)commandKey {
+    NSString *key = [self getKeyFromCommand:commandKey];
+    [self commandCompletedKey:key];
+}
+
+- (void )commandCompletedKey: (NSString *)key {
+    NSLog(@"Processing Complete");
+    CDVInvokedUrlCommand* command = [self commandQueuePopKey: key ]; // Pop the last command and process the next one.
+    [bleProcessing setObject: @"false" forKey: key];
+    [self processCommandsKey: key];
+}
+
 
 
 #ifndef ADD_DELAYS
@@ -591,7 +664,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
                 }
                 [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
             }
-          [self commandCompleted]; // Done in onWrite
+            [self commandCompleted: command]; // Done in onWrite
             
         });
         // dispatch_release(queue); // release the thread if its one of ours
@@ -614,7 +687,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
                 pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"message was null"];
             }
             [self.commandDelegate sendPluginResult:pluginResult callbackId:command.callbackId];
-            [self commandCompleted];
+            [self commandCompleted: command];
         }
         
     }
@@ -1074,6 +1147,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
     NSString *key = [self keyForPeripheral: peripheral andCharacteristic:characteristic];
     NSString *notifyCallbackId = [notificationCallbacks objectForKey:key];
 
+    //This is for async notifies
     if (notifyCallbackId) {
         NSData *data = characteristic.value; // send RAW data to Javascript
 
@@ -1081,7 +1155,6 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsArrayBuffer:data];
         [pluginResult setKeepCallbackAsBool:TRUE]; // keep for notification
         [self.commandDelegate sendPluginResult:pluginResult callbackId:notifyCallbackId];
-     //   [self commandCompleted];  This is for async notifies
     }
 
     NSString *readCallbackId = [readCallbacks objectForKey:key];
@@ -1092,7 +1165,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
         CDVPluginResult *pluginResult = nil;
         pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsArrayBuffer:data];
         [self.commandDelegate sendPluginResult:pluginResult callbackId:readCallbackId];
- //         [self commandCompleted];
+ 
 
         [readCallbacks removeObjectForKey:key];
     }
@@ -1128,7 +1201,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
         [self.commandDelegate sendPluginResult:pluginResult callbackId:notificationCallbackId];
        
     }
-    [self commandCompleted];
+    [self commandCompletedKey: [self keyForPeripheral: peripheral] ];
 
 }
 
@@ -1154,7 +1227,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
         [writeCallbacks removeObjectForKey:key];
      
     }
-       [self commandCompleted];
+    [self commandCompletedKey: [self keyForPeripheral: peripheral] ];
 }
 
 - (void)peripheralDidUpdateRSSI:(CBPeripheral*)peripheral error:(NSError*)error {
@@ -1178,7 +1251,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
         }
         [self.commandDelegate sendPluginResult:pluginResult callbackId: readRSSICallbackId];
         [readRSSICallbacks removeObjectForKey:readRSSICallbackId];
-         [self commandCompleted];
+       [self commandCompletedKey: [self keyForPeripheral: peripheral] ];
     }
 }
 
@@ -1415,6 +1488,18 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
 
 -(NSString *) keyForPeripheral: (CBPeripheral *)peripheral andCharacteristic:(CBCharacteristic *)characteristic {
     return [NSString stringWithFormat:@"%@|%@", [peripheral uuidAsString], [characteristic UUID]];
+}
+
+-(NSString *) keyForPeripheral: (CBPeripheral *)peripheral {
+    return [NSString stringWithFormat:@"%@", [peripheral uuidAsString]];
+}
+
+// Return just the peripheralKey from a key with peripheral UUID and characteristic
+-(NSString *) keyFromComplexKey: (NSString *)inKey {
+    NSArray *parts = [inKey componentsSeparatedByString: @"|"];
+    
+    return parts[0];
+
 }
 
 #pragma mark - util

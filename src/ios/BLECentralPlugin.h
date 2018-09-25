@@ -34,6 +34,10 @@
     NSMutableDictionary *stopNotificationCallbacks;
     NSMutableDictionary *connectCallbackLatches;
     NSMutableDictionary *readRSSICallbacks;
+    NSMutableArray *commandQueue;
+    NSMutableDictionary * commandQueueDict;
+    NSMutableDictionary *bleProcessing;
+
 }
 
 @property (strong, nonatomic) NSMutableSet *peripherals;
