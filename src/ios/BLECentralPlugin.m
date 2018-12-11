@@ -1168,6 +1168,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
  
 
         [readCallbacks removeObjectForKey:key];
+        [self commandCompletedKey: [self keyForPeripheral: peripheral] ]; // 12/11/18 - NVF Added this so reads work properly
     }
 }
 
