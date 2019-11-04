@@ -709,7 +709,7 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
  //   callbackContext.sendPluginResult(result);
  //
 
-    private void findLowEnergyDevices(CallbackContext callbackContext, UUID[] serviceUUIDs, int scanSeconds) {
+  private void findLowEnergyDevices(CallbackContext callbackContext, UUID[] serviceUUIDs, int scanSeconds) {
 
 
        if(!PermissionHelper.hasPermission(this, ACCESS_COARSE_LOCATION)) {
@@ -721,48 +721,53 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
                return;
            }
 
-           // ignore if currently scanning, alternately could return an error
+
+
+        // ignore if currently scanning, alternately could return an error
            if (bluetoothAdapter.isDiscovering()) {
                return;
+
+           } else {
+
+               // 11/4/19 - NVF Added this to allow multiple threads to call this without causing a java.util.ConcurrentModificationException:
+               synchronized (peripherals) {
+                   // clear non-connected cached peripherals
+                   for (Iterator<Map.Entry<String, Peripheral>> iterator = peripherals.entrySet().iterator(); iterator.hasNext(); ) {
+                       Map.Entry<String, Peripheral> entry = iterator.next();
+                       if (!entry.getValue().isConnected()) {
+                           iterator.remove();
+                       }
+                   }
+               }
+
+               discoverCallback = callbackContext;
+
+               if (serviceUUIDs != null && serviceUUIDs.length > 0 && !partialMatch) {
+                   bluetoothAdapter.startLeScan(serviceUUIDs, this);  // Find a specific device - assumes it conforms to bluetooth specs and adverstises with standardized uuids
+               } else {
+                   bluetoothAdapter.startLeScan(this);             // Look for all devices
+               }
+
+               if (scanSeconds > 0) {
+
+                   Handler handler = new Handler(Looper.getMainLooper()); // NVF Added the Looper.getMainLooper() call to allow us to embed this thread in another
+                   handler.postDelayed(new Runnable() {
+                       @Override
+                       public void run() {
+                           LOG.d(TAG, "Stopping Scan");
+                           BLECentralPlugin.this.bluetoothAdapter.stopLeScan(BLECentralPlugin.this);
+                           //setupCallbackBasedOnService("ba11f08c5f140b0d1080");
+                       }
+                   }, scanSeconds * 1000);
+               }
+
+               // Default to call the failure callback unless we find something
+               PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
+               result.setKeepCallback(true);
+
+               if (callbackContext != null)          // 5/6/17 - NVF Added this to avoid cores - not sure if it will cause other issues instead of figuring out why...
+                   callbackContext.sendPluginResult(result);
            }
-
-        // TODO skip if currently scanning
-
-        // clear non-connected cached peripherals
-        for (Iterator<Map.Entry<String, Peripheral>> iterator = peripherals.entrySet().iterator(); iterator.hasNext(); ) {
-            Map.Entry<String, Peripheral> entry = iterator.next();
-            if (!entry.getValue().isConnected()) {
-                iterator.remove();
-            }
-        }
-
-        discoverCallback = callbackContext;
-
-        if (serviceUUIDs!=null && serviceUUIDs.length > 0 && !partialMatch) {
-            bluetoothAdapter.startLeScan(serviceUUIDs, this);  // Find a specific device - assumes it conforms to bluetooth specs and adverstises with standardized uuids
-        } else {
-            bluetoothAdapter.startLeScan(this);             // Look for all devices
-        }
-
-        if (scanSeconds > 0) {
-
-            Handler handler = new Handler(Looper.getMainLooper()); // NVF Added the Looper.getMainLooper() call to allow us to embed this thread in another
-            handler.postDelayed(new Runnable() {
-                @Override
-                public void run() {
-                    LOG.d(TAG, "Stopping Scan");
-                    BLECentralPlugin.this.bluetoothAdapter.stopLeScan(BLECentralPlugin.this);
-                    //setupCallbackBasedOnService("ba11f08c5f140b0d1080");
-                }
-            }, scanSeconds * 1000);
-        }
-
-        // Default to call the failure callback unless we find something
-        PluginResult result = new PluginResult(PluginResult.Status.NO_RESULT);
-        result.setKeepCallback(true);
-
-        if (callbackContext!=null)          // 5/6/17 - NVF Added this to avoid cores - not sure if it will cause other issues instead of figuring out why...
-            callbackContext.sendPluginResult(result);
     }
 
     private void listKnownDevices(CallbackContext callbackContext) {
