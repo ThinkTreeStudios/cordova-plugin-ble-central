@@ -431,7 +431,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
         if ([command.methodName isEqualToString: @"read"]) {
             [self readEx: command];
         } else if ([command.methodName isEqualToString: @"write"]) {
-            [self writeEx: command];
+	            [self writeEx: command];
         } else if ([command.methodName isEqualToString: @"writeWithoutResponse"]) {
             [self writeWithoutResponseEx: command];
         } else if ([command.methodName isEqualToString: @"startNotification"]) {
@@ -1076,6 +1076,7 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
 - (void)centralManager:(CBCentralManager *)central didConnectPeripheral:(CBPeripheral *)peripheral {
 
     NSLog(@"didConnectPeripheral");
+    
 
     peripheral.delegate = self;
 
@@ -1088,6 +1089,15 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
 - (void)centralManager:(CBCentralManager *)central didDisconnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error {
 
     NSLog(@"didDisconnectPeripheral");
+    
+    // Clear out all pending commands - 6/23/2020 - NVF Added to keep from getting clogged for no reason
+    
+    NSString *key = [self keyForPeripheral: peripheral ];
+   [bleProcessing setObject: @"false" forKey: key];
+    NSUInteger count=0;
+    while ([self commandQueuePopKey:key] != nil) {
+        NSLog(@"Popping stale commands (%ld)",++count);
+    }
 
     NSString *connectCallbackId = [connectCallbacks valueForKey:[peripheral uuidAsString]];
     [connectCallbacks removeObjectForKey:[peripheral uuidAsString]];
