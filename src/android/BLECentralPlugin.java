@@ -31,6 +31,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
+import android.util.Log;
 
 import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaArgs;
@@ -196,10 +197,24 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
                    if (action.equals(SCAN)) {
 
                        serviceUUIDs = parseServiceUUIDList(args.getJSONArray(0));
-                       int scanSeconds = args.getInt(1);
+                       final int scanSeconds = args.getInt(1);
                        partialMatch = false;
                        resetScanOptions();
-                       findLowEnergyDevices(callbackContext, serviceUUIDs, scanSeconds);
+                       bluetoothAdapter.stopLeScan(BLECentralPlugin.this);  //6/22/2020 - NVF Added this to stop any ongoing scan before requesting a new one so we can't fail - useful if looking for the wearable when someone wants to take a measurement...
+
+                       new java.util.Timer().schedule(  // Stop any ongoing scan and then start the new requested one - especially since it might be another device to look for - wearable can connect later
+                               new java.util.TimerTask() {
+                                   @Override
+                                   public void run() {
+
+                                       findLowEnergyDevices(callbackContext, serviceUUIDs, scanSeconds);
+
+                                    }
+                               },
+                               750
+                       );
+
+
                    } else if (action.equals(SAY)) {
 
                        String textToSay = args.getString(0);
@@ -212,6 +227,7 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
 
                    } else if (action.equals(PARTIAL_SCAN)) {
 
+                       bluetoothAdapter.stopLeScan(BLECentralPlugin.this);  //6/22/2020 - NVF Added this to stop any ongoing scan before requesting a new one so we can't fail - useful if looking for the wearable when someone wants to take a measurement...
 
                        partialMatch = args.getBoolean(1);
                        // For partial matches we will parse the first argument in the list passed to use later.
@@ -222,15 +238,42 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
                        } else {
                            serviceUUIDs = parseServiceUUIDList(args.getJSONArray(0));
                        }
-                       int scanSeconds = args.getInt(2);
-                       findLowEnergyDevices(callbackContext, serviceUUIDs, scanSeconds);
+                       final int scanSeconds = args.getInt(2);
+                       new java.util.Timer().schedule(  // Stop any ongoing scan and then start the new requested one - especially since it might be another device to look for - wearable can connect later
+                               new java.util.TimerTask() {
+                                   @Override
+                                   public void run() {
+
+                                       findLowEnergyDevices(callbackContext, serviceUUIDs, scanSeconds);
+
+                                   }
+                               },
+                               750
+                       );
 
 
                    } else if (action.equals(START_SCAN)) {
 
-                       UUID[] serviceUUIDs = parseServiceUUIDList(args.getJSONArray(0));
-                       resetScanOptions();
-                       findLowEnergyDevices(callbackContext, serviceUUIDs, -1);
+                       bluetoothAdapter.stopLeScan(BLECentralPlugin.this);  //6/22/2020 - NVF Added this to stop any ongoing scan before requesting a new one so we can't fail - useful if looking for the wearable when someone wants to take a measurement...
+
+                       new java.util.Timer().schedule(  // Stop any ongoing scan and then start the new requested one - especially since it might be another device to look for - wearable can connect later
+                               new java.util.TimerTask() {
+                                   @Override
+                                   public void run() {
+                                       UUID[] serviceUUIDs = new UUID[0];
+                                       try {
+                                           serviceUUIDs = parseServiceUUIDList(args.getJSONArray(0));
+                                       } catch (JSONException e) {
+                                           e.printStackTrace();
+                                       }
+                                       resetScanOptions();
+                                       findLowEnergyDevices(callbackContext, serviceUUIDs, -1);
+                                   }
+                               },
+                               750
+                       );
+
+
 
                    } else if (action.equals(STOP_SCAN)) {
 
@@ -725,6 +768,7 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
 
         // ignore if currently scanning, alternately could return an error
            if (bluetoothAdapter.isDiscovering()) {
+               Log.e("BLECentral", "Bluetooth adapter is in discovery already!!");
                return;
 
            } else {
@@ -743,9 +787,26 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
                discoverCallback = callbackContext;
 
                if (serviceUUIDs != null && serviceUUIDs.length > 0 && !partialMatch) {
-                   bluetoothAdapter.startLeScan(serviceUUIDs, this);  // Find a specific device - assumes it conforms to bluetooth specs and adverstises with standardized uuids
+                   if (bluetoothAdapter.startLeScan(serviceUUIDs, this) == false)  { // Find a specific device - assumes it conforms to bluetooth specs and adverstises with standardized uuids
+                        Log.e("BLECentral","Failed to start scan!!!");
+                       // Default to call the failure callback unless we find something
+                       PluginResult result = new PluginResult(PluginResult.Status.ERROR,"Failed to start scan");
+                       result.setKeepCallback(true);
+
+                       if (callbackContext != null)          // 5/6/17 - NVF Added this to avoid cores - not sure if it will cause other issues instead of figuring out why...
+                           callbackContext.sendPluginResult(result);
+                   }
+
                } else {
-                   bluetoothAdapter.startLeScan(this);             // Look for all devices
+                   if (bluetoothAdapter.startLeScan(this)==false) {             // Look for all devices
+                       Log.e("BLECentral","Failed to start scan!!!");
+                       PluginResult result = new PluginResult(PluginResult.Status.ERROR, "Failed to start scan");
+                       result.setKeepCallback(true);
+
+                       if (callbackContext != null)          // 5/6/17 - NVF Added this to avoid cores - not sure if it will cause other issues instead of figuring out why...
+                           callbackContext.sendPluginResult(result);
+
+                   }
                }
 
                if (scanSeconds > 0) {
