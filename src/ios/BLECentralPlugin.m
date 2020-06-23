@@ -796,6 +796,10 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
 
 - (void)partialScan:(CDVInvokedUrlCommand*)command {
 
+    NSLog(@"stop any existing scan");
+
+    [manager stopScan];
+
     NSLog(@"scan");
     discoverPeripheralCallbackId = [command.callbackId copy];
 
@@ -834,6 +838,11 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
 }
 
 - (void)startScan:(CDVInvokedUrlCommand*)command {
+    
+    
+    NSLog(@"stop any existing scan");
+
+    [manager stopScan];
 
     NSLog(@"startScan");
     discoverPeripheralCallbackId = [command.callbackId copy];
@@ -850,6 +859,12 @@ void dispatch_after_delay_on_background_queue(float delayInSeconds, dispatch_blo
 }
 
 - (void)startScanWithOptions:(CDVInvokedUrlCommand*)command {
+    
+    
+    NSLog(@"stop any existing scan");
+
+    [manager stopScan];
+    
     NSLog(@"startScanWithOptions");
     discoverPeripheralCallbackId = [command.callbackId copy];
     NSArray *serviceUUIDStrings = [command.arguments objectAtIndex:0];
