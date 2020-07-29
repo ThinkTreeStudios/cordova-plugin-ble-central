@@ -108,9 +108,17 @@ static char ADVERTISEMENT_RSSI_IDENTIFER;
     if (serviceData) {
         NSLog(@"%@", serviceData);
 
-        for(CBUUID *key in serviceData) {
+
+
+        //for(CBUUID *key in serviceData) {  Fix per Crashlytics bug found on  2.3.8 (72020201) - code change pulled from latest ble-central plugin which already had this fix
+        //Crashed: com.google.firebase.crashlytics.ios.exception
+        //Fatal Exception: NSGenericException
+        //*** Collection <__NSDictionaryM: 0x2820097e0> was mutated while being enumerated.
+         for (CBUUID *key in [serviceData allKeys]) {
+
             [serviceData setObject:dataToArrayBuffer([serviceData objectForKey:key]) forKey:[key UUIDString]];
             [serviceData removeObjectForKey:key];
+
         }
     }
 
