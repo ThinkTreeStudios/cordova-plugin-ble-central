@@ -48,6 +48,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.*;
 
+import static android.Manifest.permission.ACCESS_FINE_LOCATION;
+
 public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.LeScanCallback {
 
     // actions
@@ -104,7 +106,9 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
 
     // Android 23 requires new permissions for BluetoothLeScanner.startScan()
     private static final String ACCESS_COARSE_LOCATION = Manifest.permission.ACCESS_COARSE_LOCATION;
+    private static final String ACCESS_FINE_LOCATION = Manifest.permission.ACCESS_FINE_LOCATION;
     private static final int REQUEST_ACCESS_COARSE_LOCATION = 2;
+    private static final int REQUEST_ACCESS_FINE_LOCATION = 1;
     private static final int PERMISSION_DENIED_ERROR = 20;
     private CallbackContext permissionCallback;
     private UUID[] serviceUUIDs; // An array of serviceUUIDs to scan for
@@ -428,12 +432,16 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
 
                        if (bluetoothAdapter.isEnabled()) {
 
-                           if(!PermissionHelper.hasPermission(BLECentralPlugin.this, ACCESS_COARSE_LOCATION)) {
+                           // 2/8/2021 - NVF Recoded to work with Android 10+
+                           if(!PermissionHelper.hasPermission(BLECentralPlugin.this, (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) ? ACCESS_FINE_LOCATION:ACCESS_COARSE_LOCATION)) {
                                // save info so we can call this method again after permissions are granted
                                permissionCallback = callbackContext;
                                lastAction = action;
-
-                               PermissionHelper.requestPermission(BLECentralPlugin.this, REQUEST_ACCESS_COARSE_LOCATION, ACCESS_COARSE_LOCATION);
+                               if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                                   PermissionHelper.requestPermission(BLECentralPlugin.this, REQUEST_ACCESS_FINE_LOCATION, ACCESS_FINE_LOCATION);  // For Android 10
+                               } else {
+                                   PermissionHelper.requestPermission(BLECentralPlugin.this, REQUEST_ACCESS_COARSE_LOCATION, ACCESS_COARSE_LOCATION);
+                               }
                                return;
                            }
                            else {
@@ -755,12 +763,16 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
   private void findLowEnergyDevices(CallbackContext callbackContext, UUID[] serviceUUIDs, int scanSeconds) {
 
 
-       if(!PermissionHelper.hasPermission(this, ACCESS_COARSE_LOCATION)) {
+       if(!PermissionHelper.hasPermission(this, (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) ? ACCESS_FINE_LOCATION:ACCESS_COARSE_LOCATION)) {
                // save info so we can call this method again after permissions are granted
                permissionCallback = callbackContext;
                this.serviceUUIDs = serviceUUIDs;
                this.scanSeconds = scanSeconds;
-               PermissionHelper.requestPermission(this, REQUEST_ACCESS_COARSE_LOCATION, ACCESS_COARSE_LOCATION);
+               if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                   PermissionHelper.requestPermission(this, REQUEST_ACCESS_FINE_LOCATION, ACCESS_FINE_LOCATION);
+               } else {
+                   PermissionHelper.requestPermission(this, REQUEST_ACCESS_COARSE_LOCATION, ACCESS_COARSE_LOCATION);
+               }
                return;
            }
 
@@ -1028,6 +1040,19 @@ public class BLECentralPlugin extends CordovaPlugin implements BluetoothAdapter.
                 switch (requestCode) {
                     case REQUEST_ACCESS_COARSE_LOCATION:
                         LOG.d(TAG, "User granted Coarse Location Access");
+
+                        if (lastAction.equals(IS_ENABLED)) {
+
+                            this.permissionCallback.success();
+                        } else {
+                            findLowEnergyDevices(permissionCallback, serviceUUIDs, scanSeconds);
+                            this.permissionCallback = null;
+                            this.serviceUUIDs = null;
+                            this.scanSeconds = -1;
+                        }
+                        break;
+                    case REQUEST_ACCESS_FINE_LOCATION:  // Added 2/8/2021
+                        LOG.d(TAG, "User granted Fine Location Access");
 
                         if (lastAction.equals(IS_ENABLED)) {
 
